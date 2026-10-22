@@ -1,6 +1,7 @@
 {smcl}
-{* Help revision 2026-10-22.2: duplicate author email removed; self-contained examples retained.}{...}
+{* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
 {* *! version 2.0.28  05aug2026}{...}
+{viewerjumpto "Related article" "dea##publication"}{...}
 {vieweralsosee "[R] frontier" "help frontier"}{...}
 {vieweralsosee "[R] teradial" "help teradial"}{...}
 {viewerjumpto "Syntax" "dea##syntax"}{...}
@@ -1003,5 +1004,18 @@ bloom.rampike@gmail.com
 {synopt:{helpb dea_stackelberg}}Stackelberg game DEA{p_end}
 {synopt:{helpb dea_sw2007}}Simar-Wilson two-stage DEA{p_end}
 {synopt:{helpb dea_window}}Window analysis DEA{p_end}
-{synopt:{helpb milp_bb}}Mixed-integer linear programming by branch-and-bound{p_end}
 {synoptline}
+
+{marker publication}{...}
+{title:Related article and software version}
+
+{pstd}
+Lee, C. Forthcoming. {it:dea: An Update and Extension to Data Envelopment Analysis}.
+Accepted for publication in the {browse "https://www.stata-journal.com/":Stata Journal}.
+{p_end}
+
+{pstd}
+This author-maintained software includes subsequent updates and may differ from
+the software submitted with the article. The acceptance notice refers to the
+article; it does not extend the article's validation claims to later code changes.
+{p_end}

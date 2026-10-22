@@ -1,6 +1,7 @@
 {smcl}
-{* Help revision 2026-10-22.2: duplicate author email removed; self-contained examples retained.}{...}
+{* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
 {* *! version 1.1.0  02may2026}{...}
+{viewerjumpto "Related article" "dea_game##publication"}{...}
 {viewerjumpto "Overview" "dea_game##overview"}{...}
 {viewerjumpto "Commands" "dea_game##commands"}{...}
 {viewerjumpto "Comparison" "dea_game##comparison"}{...}
@@ -222,3 +223,17 @@ bloom.rampike@gmail.com
 {synopt:{helpb dea_sw2007}}Simar-Wilson two-stage DEA{p_end}
 {synopt:{helpb dea_window}}Window analysis DEA{p_end}
 {synoptline}
+
+{marker publication}{...}
+{title:Related article and software version}
+
+{pstd}
+Lee, C. Forthcoming. {it:dea: An Update and Extension to Data Envelopment Analysis}.
+Accepted for publication in the {browse "https://www.stata-journal.com/":Stata Journal}.
+{p_end}
+
+{pstd}
+This author-maintained software includes subsequent updates and may differ from
+the software submitted with the article. The acceptance notice refers to the
+article; it does not extend the article's validation claims to later code changes.
+{p_end}

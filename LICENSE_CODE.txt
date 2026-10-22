@@ -10,7 +10,7 @@ The Stata software in this repository is distributed under AFL-3.0,
 continuing the DEAS software license used on SourceForge. The complete,
 unmodified license is provided in LICENSE.
 
-This notice covers the .ado and .sthlp files and the four implementation
+This notice covers the .ado and .sthlp files and the two implementation
 .do files required at runtime. Preserve the copyright and contributor
 notices in individual files. Research and education are intended uses;
 they do not restrict other uses permitted by AFL-3.0. No additional
@@ -25,17 +25,24 @@ https://www.sagepub.com/journals/permissions/sages-author-archiving-and-re-use-g
 Attribution
 -----------
 
-Preserve attribution to the authors and the Stata Journal where these
-software files accompany the forthcoming article identified in the
-existing DEAS attribution notice:
+This repository maintains the DEA command family documented in the following
+article, together with subsequent author-maintained software updates:
 
-Lee, C. Forthcoming. `dea`: An update and extension to Data Envelopment
-Analysis. Stata Journal.
+Lee, C. Forthcoming. dea: An Update and Extension to Data Envelopment Analysis.
+Accepted for publication in the Stata Journal.
+Stata Journal: https://www.stata-journal.com/
+
+The current development version may differ from the software submitted with
+the article. The acceptance notice refers to the article; it does not extend
+the article's validation claims to later code changes. The game-theoretic
+commands retain the exploratory diagnostic scope described in the article.
+Preserve attribution to the authors and the Stata Journal when redistributing
+these software files.
 
 After publication, use the complete journal citation and DOI when available.
 Command-specific contributors and methodological references are recorded
-in the source and help files. Repository extensions and subsequent changes
-are not automatically part of a journal article's accepted version.
+in the source and help files. The README command index defines the software
+scope of this repository.
 
 Warranty and liability
 ----------------------

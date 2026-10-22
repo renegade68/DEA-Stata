@@ -1,13 +1,24 @@
 # DEA-Stata
 
-Stata commands for data envelopment analysis and related frontier methods.
-Requires Stata 16 or newer. Command-specific assumptions and limitations are
-documented in the linked help files.
+Stata software for the article:
+
+> Lee, C. Forthcoming. *dea: An Update and Extension to Data Envelopment Analysis*.
+> Accepted for publication in the [Stata Journal](https://www.stata-journal.com/).
+
+This repository maintains the article's DEA command family and subsequent updates.
+The current development version may differ from the software submitted with the
+article. The acceptance notice refers to the article; it does not extend the
+article's validation claims to later code changes.
+
+Requires Stata 16 or newer. The command index below defines the software scope.
+The game-theoretic commands are exploratory diagnostics, as described in the
+article, and are not fully specified structural game estimators. Command-specific
+assumptions and limitations are documented in the linked help files.
 
 ## Start using the commands
 
 Download or clone this repository. Keep **all files in `ado/` together**, including
-the four implementation `.do` files. In Stata, add that folder for this session:
+the two implementation `.do` files. In Stata, add that folder for this session:
 
 ```stata
 adopath ++ "/your/path/DEA-Stata/ado"
@@ -52,28 +63,15 @@ Use the help link to inspect syntax and examples on GitHub, or type
 | Core DEA | `dea_sbmundesirable` | SBM with undesirable outputs | [code](ado/dea_sbmundesirable.ado) · [help](ado/dea_sbmundesirable.sthlp) |
 | Time and productivity | `dea_malmquist` | Malmquist productivity | [code](ado/dea_malmquist.ado) · [help](ado/dea_malmquist.sthlp) |
 | Time and productivity | `dea_window` | Window analysis | [code](ado/dea_window.ado) · [help](ado/dea_window.sthlp) |
-| Time and productivity | `dea_dynamic` | Dynamic SBM with carry-over links | [code](ado/dea_dynamic.ado) · [help](ado/dea_dynamic.sthlp) |
-| Time and productivity | `tfdea` | Technology forecasting | [code](ado/tfdea.ado) · [help](ado/tfdea.sthlp) |
-| Cross-efficiency, games and networks | `dea_crosseff` | Cross-efficiency | [code](ado/dea_crosseff.ado) · [help](ado/dea_crosseff.sthlp) |
-| Cross-efficiency, games and networks | `dea_crossgame` | Cross-efficiency games | [code](ado/dea_crossgame.ado) · [help](ado/dea_crossgame.sthlp) |
-| Cross-efficiency, games and networks | `dea_nash` | Nash-style allocation | [code](ado/dea_nash.ado) · [help](ado/dea_nash.sthlp) |
-| Cross-efficiency, games and networks | `dea_cooperative` | Shapley-style coalitions | [code](ado/dea_cooperative.ado) · [help](ado/dea_cooperative.sthlp) |
-| Cross-efficiency, games and networks | `dea_stackelberg` | Stackelberg-style two-stage diagnostics | [code](ado/dea_stackelberg.ado) · [help](ado/dea_stackelberg.sthlp) |
-| Cross-efficiency, games and networks | `dea_network` | Two-stage network DEA | [code](ado/dea_network.ado) · [help](ado/dea_network.sthlp) |
+| Cross-efficiency and networks | `dea_crosseff` | Cross-efficiency | [code](ado/dea_crosseff.ado) · [help](ado/dea_crosseff.sthlp) |
+| Cross-efficiency and networks | `dea_network` | Two-stage network DEA | [code](ado/dea_network.ado) · [help](ado/dea_network.sthlp) |
 | Inference and uncertainty | `dea_bootstrap` | Bootstrap bias correction | [code](ado/dea_bootstrap.ado) · [help](ado/dea_bootstrap.sthlp) |
 | Inference and uncertainty | `dea_sw2007` | Two-stage bootstrap inference | [code](ado/dea_sw2007.ado) · [help](ado/dea_sw2007.sthlp) |
 | Inference and uncertainty | `dea_fuzzy` | Fuzzy DEA | [code](ado/dea_fuzzy.ado) · [help](ado/dea_fuzzy.sthlp) |
-| Frontier extensions | `dea_metafrontier` | DEA metafrontier | [code](ado/dea_metafrontier.ado) · [help](ado/dea_metafrontier.sthlp) |
-| Frontier extensions | `dea_mf_malmquist` | Global metafrontier Malmquist | [code](ado/dea_mf_malmquist.ado) · [help](ado/dea_mf_malmquist.sthlp) |
-| Frontier extensions | `dea_nerlovian` | Directional profit inefficiency | [code](ado/dea_nerlovian.ado) · [help](ado/dea_nerlovian.sthlp) |
-| Frontier extensions | `sfa_metafrontier` | Stochastic metafrontier comparison | [code](ado/sfa_metafrontier.ado) · [help](ado/sfa_metafrontier.sthlp) |
-| Frontier extensions | `convnls` | Convex nonparametric least squares | [code](ado/convnls.ado) · [help](ado/convnls.sthlp) |
-| Frontier extensions | `stoned` | StoNED error decomposition | [code](ado/stoned.ado) · [help](ado/stoned.sthlp) |
-| Reference diagnostics and optimization | `dea_reference` | Optimal-set peer diagnostics | [code](ado/dea_reference.ado) · [help](ado/dea_reference.sthlp) |
-| Reference diagnostics and optimization | `dea_reference_batch` | Restartable batch diagnostics | [code](ado/dea_reference_batch.ado) · [help](ado/dea_reference_batch.sthlp) |
-| Reference diagnostics and optimization | `dea_reference_batch_status` | Checkpoint progress | [code](ado/dea_reference_batch_status.ado) · [help](ado/dea_reference_batch_status.sthlp) |
-| Reference diagnostics and optimization | `dea_reference_sensitivity` | Tolerance sensitivity | [code](ado/dea_reference_sensitivity.ado) · [help](ado/dea_reference_sensitivity.sthlp) |
-| Reference diagnostics and optimization | `milp_bb` | Small mixed-integer linear programs | [code](ado/milp_bb.ado) · [help](ado/milp_bb.sthlp) |
+| Exploratory game diagnostics | `dea_crossgame` | Cross-efficiency strategy comparison | [code](ado/dea_crossgame.ado) · [help](ado/dea_crossgame.sthlp) |
+| Exploratory game diagnostics | `dea_nash` | Nash-style allocation | [code](ado/dea_nash.ado) · [help](ado/dea_nash.sthlp) |
+| Exploratory game diagnostics | `dea_cooperative` | Shapley-style coalitions | [code](ado/dea_cooperative.ado) · [help](ado/dea_cooperative.sthlp) |
+| Exploratory game diagnostics | `dea_stackelberg` | Stackelberg-style two-stage diagnostics | [code](ado/dea_stackelberg.ado) · [help](ado/dea_stackelberg.sthlp) |
 
 ## Versions and feedback
 
@@ -90,8 +88,9 @@ Create synthetic example data instead of attaching private research data.
 ## Attribution and licensing
 
 Preserve the author and reference information in the code and help files.
-Consult each command's references when citing the method. Repository development
-versions may include extensions beyond a journal article's reproducibility version.
+Cite the article above for the software and each command's references for the
+method. The journal citation and article link will be updated when a DOI and
+complete publication details become available.
 
 The software is licensed under the [Academic Free License 3.0](LICENSE),
 continuing the DEAS license used on SourceForge. See [the software notice](LICENSE_CODE.txt)
