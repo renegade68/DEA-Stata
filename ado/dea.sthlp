@@ -1,5 +1,5 @@
 {smcl}
-{* Help revision 2026-10-22.1: self-contained examples; command version retained.}{...}
+{* Help revision 2026-10-22.2: duplicate author email removed; self-contained examples retained.}{...}
 {* *! version 2.0.28  05aug2026}{...}
 {vieweralsosee "[R] frontier" "help frontier"}{...}
 {vieweralsosee "[R] teradial" "help teradial"}{...}
@@ -980,7 +980,7 @@ Data envelopment analysis in Stata.
 Choonjoo Lee (corresponding author){break}
 Korea National Defense University{break}
 Seoul, Korea{break}
-bloom.rampike@gmail.com; bloom.rampike@gmail.com
+bloom.rampike@gmail.com
 
 {marker alsosee}{...}
 {title:Also see}

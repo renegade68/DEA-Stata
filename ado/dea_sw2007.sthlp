@@ -1,5 +1,5 @@
 {smcl}
-{* Help revision 2026-10-22.1: self-contained examples; command version retained.}{...}
+{* Help revision 2026-10-22.2: duplicate author email removed; self-contained examples retained.}{...}
 {* *! version 1.1.0  01may2026}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_bootstrap" "help dea_bootstrap"}{...}
@@ -360,7 +360,7 @@ Using least squares and tobit in second stage DEA efficiency analyses.
 Choonjoo Lee (corresponding author){break}
 Korea National Defense University{break}
 Seoul, Korea{break}
-bloom.rampike@gmail.com; bloom.rampike@gmail.com
+bloom.rampike@gmail.com
 
 {marker alsosee}{...}
 {title:Also see}

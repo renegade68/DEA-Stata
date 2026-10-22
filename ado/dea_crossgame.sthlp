@@ -1,5 +1,5 @@
 {smcl}
-{* Help revision 2026-10-22.1: self-contained examples; command version retained.}{...}
+{* Help revision 2026-10-22.2: duplicate author email removed; self-contained examples retained.}{...}
 {* version 2.2.0  03may2026}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_crosseff" "help dea_crosseff"}{...}
@@ -184,7 +184,7 @@ at the Summer Olympics using cross efficiency evaluation method.
 Choonjoo Lee (corresponding author){break}
 Korea National Defense University{break}
 Seoul, Korea{break}
-bloom.rampike@gmail.com; bloom.rampike@gmail.com
+bloom.rampike@gmail.com
 
 {marker alsosee}{...}
 {title:Also see}

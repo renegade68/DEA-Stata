@@ -7,7 +7,7 @@
 *!   Choonjoo Lee (corresponding author)
 *!     Korea National Defense University
 *!     Seoul, Korea
-*!     bloom.rampike@gmail.com; bloom.rampike@gmail.com
+*!     bloom.rampike@gmail.com
 *!
 *! Changelog:
 *!   1.0.1  02may2026  Add wrapper-level return aliases for help compatibility

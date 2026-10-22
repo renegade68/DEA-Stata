@@ -1,5 +1,5 @@
 {smcl}
-{* Help revision 2026-10-22.1: self-contained examples; command version retained.}{...}
+{* Help revision 2026-10-22.2: duplicate author email removed; self-contained examples retained.}{...}
 {* *! version 1.1.0  02may2026}{...}
 {viewerjumpto "Overview" "dea_game##overview"}{...}
 {viewerjumpto "Commands" "dea_game##commands"}{...}
@@ -198,7 +198,7 @@ von Stackelberg, H. 1934. {it:Marktform und Gleichgewicht}. Vienna: Julius Sprin
 Choonjoo Lee (corresponding author){break}
 Korea National Defense University{break}
 Seoul, Korea{break}
-bloom.rampike@gmail.com; bloom.rampike@gmail.com
+bloom.rampike@gmail.com
 
 {marker alsosee}{...}
 {title:Also see}

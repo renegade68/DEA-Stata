@@ -47,7 +47,7 @@
 *!   Choonjoo Lee (corresponding author)
 *!     Korea National Defense University
 *!     Seoul, Korea
-*!     bloom.rampike@gmail.com; bloom.rampike@gmail.com
+*!     bloom.rampike@gmail.com
 *!
 *! REFERENCES:
 *! -----------

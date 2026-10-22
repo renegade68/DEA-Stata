@@ -7,7 +7,7 @@
 *!   Choonjoo Lee (corresponding author)
 *!     Korea National Defense University
 *!     Seoul, Korea
-*!     bloom.rampike@gmail.com; bloom.rampike@gmail.com
+*!     bloom.rampike@gmail.com
 *!
 *!
 *! NOTE: This IPM engine module is entirely new in v2.0 (no code from

@@ -1,5 +1,5 @@
 {smcl}
-{* Help revision 2026-10-22.1: self-contained examples; command version retained.}{...}
+{* Help revision 2026-10-22.2: duplicate author email removed; self-contained examples retained.}{...}
 {* *! version 2.0.0  26apr2026}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_sbmundesirable" "help dea_sbmundesirable"}{...}
@@ -238,7 +238,7 @@ References and DEA-Solver Software}. 2nd ed. New York: Springer.
 Choonjoo Lee (corresponding author){break}
 Korea National Defense University{break}
 Seoul, Korea{break}
-bloom.rampike@gmail.com; bloom.rampike@gmail.com
+bloom.rampike@gmail.com
 
 {marker alsosee}{...}
 {title:Also see}
