@@ -1,4 +1,5 @@
 {smcl}
+{* Help revision 2026-11-01: explicit crisp-DEA identifiers in the sequential example.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
 {* *! version 1.0.1  03may2026}{...}
 {viewerjumpto "Related article" "dea_fuzzy##publication"}{...}
@@ -319,7 +320,7 @@ Because α = 1 collapses all bounds to the center value, results at
 match standard DEA results from {cmd:dea} with the same {cmd:rts()} and
 {cmd:orientation()}.  This provides a useful cross-check:
 
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) gen(crs_eff)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) gen(crs_eff) dmu(dmu)}{p_end}
 {phang2}{cmd:. dea_fuzzy, inputs(i_employee i_area) outputs(o_sales o_profits) xlo(i_employee_lo i_area_lo) xhi(i_employee_hi i_area_hi) ylo(o_sales_lo o_profits_lo) yhi(o_sales_hi o_profits_hi) alpha(1) gen(f)}{p_end}
 {phang2}{cmd:. assert abs(crs_eff - f_pess_a100) < 1e-6}{p_end}
 
@@ -378,9 +379,10 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 
     {title:Verification: α=1 should equal standard DEA}
 
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) gen(theta)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) gen(theta) dmu(dmu)}{p_end}
 {phang2}{cmd:. dea_fuzzy, inputs(i_employee i_area) outputs(o_sales o_profits) xlo(i_employee_lo i_area_lo) xhi(i_employee_hi i_area_hi) ylo(o_sales_lo o_profits_lo) yhi(o_sales_hi o_profits_hi) alpha(1) gen(chk)}{p_end}
 {phang2}{cmd:. list dmu theta chk_pess_a100 chk_opt_a100, clean}{p_end}
+{phang2}{cmd:. assert abs(theta-chk_pess_a100) < 1e-6 & abs(theta-chk_opt_a100) < 1e-6}{p_end}
 
     {title:Compute a finer membership grid}
 

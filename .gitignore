@@ -5,6 +5,11 @@
 !/LICENSE
 !/LICENSE_CODE.txt
 !/ado/
+!/tests/
+/tests/*
+!/tests/test_saveref.py
+!/tests/test_help_syntax.py
+!/tests/README.md
 /ado/*
 !/ado/_dea_ipm.ado
 !/ado/_dea_lpcontract.ado

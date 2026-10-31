@@ -1,4 +1,5 @@
-*! version 2.0.28  05aug2026
+*! version 2.0.29  01nov2026
+*! Persist reference weights, finalize saving after retries, and protect automatic DMU IDs
 *! DEA: Data Envelopment Analysis
 *! Requires: Stata 16.0 or later
 *! Program: dea — an update
@@ -442,12 +443,22 @@ program define dea, rclass
         }
     }
     
-    // Handle DMU variable
+    // Use a temporary automatic ID until validation and computation succeed.
+    // Never replace an existing user ID implicitly.
     local _generated_dmu 0
     if "`dmu'" == "" {
-        cap drop _dmu
-        qui gen str _dmu = "dmu" + string(_n) if `touse'
-        local dmu "_dmu"
+        capture confirm new variable _dmu
+        if _rc {
+            di as error "_dmu already exists; specify dmu(_dmu) to use it or supply another dmu() variable"
+            exit 110
+        }
+        if "`generate'" == "_dmu" {
+            di as error "generate(_dmu) conflicts with automatic DMU identifiers"
+            exit 110
+        }
+        tempvar _automatic_dmu
+        qui gen str32 `_automatic_dmu' = "dmu" + string(_n) if `touse'
+        local dmu "`_automatic_dmu'"
         local _generated_dmu 1
     }
     
@@ -458,6 +469,25 @@ program define dea, rclass
         exit 2000
     }
     local n_dmus = r(N)
+
+    // Plan persistent names before computation, without modifying user data.
+    // A final-engine matrix is copied only after the command has finished solving.
+    local _ref_names ""
+    if "`saveref'" != "" {
+        if !inlist("`model'", "te", "supereff") | "`fdh'" != "" | ///
+           "`bounded'`ordinal'`xlo'`xhi'`ylo'`yhi'`xord'`yord'" != "" {
+            di as error "saveref requires radial model(te) or model(supereff), without FDH or imprecise-data options"
+            exit 198
+        }
+        mata: _dea_saveref_plan("`dmu'", "`touse'")
+        foreach _rv of local _ref_names {
+            confirm new variable `_rv'
+            if "`_rv'" == "`generate'" {
+                di as error "generate() conflicts with planned reference variable `_rv'"
+                exit 110
+            }
+        }
+    }
 
     // Under engine(auto), avoid sending a radial DEA problem with strongly
     // heterogeneous dimensional scales through the unscaled public simplex
@@ -494,7 +524,7 @@ program define dea, rclass
     // 1.4 Display header
     // =========================================================================
     di as text "{hline `c(linesize)'}"
-    di as text "dea v2.0.28 — Data Envelopment Analysis"
+    di as text "dea v2.0.29 — Data Envelopment Analysis"
     di as text "Engine: `engine_label'"
     di as text "Specification: model(`model') rts(`rts') orientation(`orientation') stage(`stage')"
     if `_no_option_call' {
@@ -521,8 +551,7 @@ program define dea, rclass
         _dea_fdh_dispatch, inputs(`inputs') outputs(`outputs') ///
             dmu(`dmu') orientation(`orientation') stage(`stage') ///
             touse(`touse') generate(`generate') tolerance(`tolerance') ///
-            `trace' `debug' `reference' `saveref' ///
-            saving(`saving') `replace'
+            `trace' `debug' `reference' `saveref'
     }
     // IDEA (Imprecise DEA) — with bounded/ordinal/interval data
     else if "`bounded'" != "" | "`ordinal'" != "" | ///
@@ -535,7 +564,7 @@ program define dea, rclass
             bounded(`bounded') ordinal(`ordinal') ///
             xlo(`xlo') xhi(`xhi') ylo(`ylo') yhi(`yhi') ///
             xord(`xord') yord(`yord') ///
-            `trace' `debug' saving(`saving') `replace'
+            `trace' `debug'
     }
     // Congestion model (Cooper, Deng, Seiford & Zhu, 2004)
     else if "`model'" == "congestion" {
@@ -560,7 +589,7 @@ program define dea, rclass
             bad(`bad') direction(`direction') ///
             `reference' `saveref' `saveweights' ///
             sbmort(`sbm_ort_num') ///
-            `trace' `debug' saving(`saving') `replace'
+            `trace' `debug'
     }
 
     // =========================================================================
@@ -624,7 +653,7 @@ program define dea, rclass
                     bounded(`bounded') ordinal(`ordinal') ///
                     xlo(`xlo') xhi(`xhi') ylo(`ylo') yhi(`yhi') ///
                     xord(`xord') yord(`yord') ///
-                    `trace' `debug' saving(`saving') `replace'
+                    `trace' `debug'
             }
             else {
                 _dea_model_dispatch, inputs(`inputs') outputs(`outputs') ///
@@ -636,7 +665,22 @@ program define dea, rclass
                     bad(`bad') direction(`direction') ///
                     `reference' `saveref' `saveweights' ///
                     sbmort(`sbm_ort_num') ///
-                    `trace' `debug' saving(`saving') `replace'
+                    `trace' `debug'
+            }
+            // Refresh snapshots from the engine that actually supplied the final
+            // scores. The initial engine's lambda/slack matrices may be stale.
+            local _r_N_eff    = r(n_efficient)
+            local _r_mean_eff = r(mean_efficiency)
+            local _r_min_eff  = r(min_eff)
+            local _r_max_eff  = r(max_eff)
+            local _r_n_failed = r(n_failed)
+            foreach _what in lambda slack_in slack_out multiplier_u0 {
+                local _r_has_`_what' 0
+                capture quietly matrix list r(`_what')
+                if _rc == 0 {
+                    matrix `_r_`_what'_mat' = r(`_what')
+                    local _r_has_`_what' 1
+                }
             }
         }
     }
@@ -713,6 +757,38 @@ program define dea, rclass
     // =========================================================================
     // 1.7 Store return values
     // =========================================================================
+    if `_generated_dmu' {
+        rename `dmu' _dmu
+        local dmu "_dmu"
+    }
+    if "`saveref'" != "" {
+        if !`_r_has_lambda' {
+            di as error "no reference-weight matrix was returned by the selected model"
+            exit 498
+        }
+        mata: _dea_saveref_store("`dmu'", "`touse'", "`_ref_names'", "`_r_lambda_mat'")
+        matrix colnames `_r_lambda_mat' = `_ref_names'
+    }
+
+    // Save exactly once, after the final engine and persistent results are known.
+    // Multiplier weights already have permanent names in the dispatcher.
+    if "`saving'" != "" {
+        local _saved_weights ""
+        if "`model'" == "multiplier" & "`saveweights'" != "" & `stage' == 2 {
+            forvalues j = 1/`m_in' {
+                local _saved_weights `_saved_weights' _dea_v`j'
+            }
+            forvalues j = 1/`m_out' {
+                local _saved_weights `_saved_weights' _dea_u`j'
+            }
+            local _saved_weights `_saved_weights' _dea_u0
+        }
+        _dea_save, saving(`saving') `replace' ///
+            inputs(`inputs') outputs(`outputs') dmu(`dmu') ///
+            generate(`generate') touse(`touse') ///
+            refvars(`_ref_names') weightvars(`_saved_weights')
+    }
+
     // NOTE: return matrix MUST come BEFORE return add in Stata 16.
     // Build efficiency matrix from generate variable
     tempname _eff_mat
@@ -748,6 +824,7 @@ program define dea, rclass
     return local inputs "`inputs'"
     return local outputs "`outputs'"
     return local generate "`generate'"
+    return local refvars "`_ref_names'"
     return scalar defaults_applied = `_no_option_call'
     return scalar generated_dmu = `_generated_dmu'
     return scalar N          = `n_dmus'
@@ -816,13 +893,13 @@ program define _dea_parse_equal, rclass
     syntax varlist(min=1 numeric) [if] [in] [using/]
     [,
         DMU(varname)
-        RTS(string)
+        Rts(string)
         ORT(string)
-        ORIentation(string)
+        ORientation(string)
         STAGE(integer 2)
         FDH
-        MODEL(string)
-        METHod(string)
+        MODel(string)
+        METhod(string)
         GENerate(name)
         TOLerance(real 1e-7)
         TOL1(real 1e-14)
@@ -854,7 +931,7 @@ program define _dea_parse_equal, rclass
         XORD(varlist numeric)
         YORD(varlist numeric)
 
-        BOOTstrap
+        BOOtstrap
         ENVars(varlist numeric)
         REPS1(integer 100)
         REPS2(integer 2000)
@@ -863,6 +940,15 @@ program define _dea_parse_equal, rclass
     #del cr
 
     local outputs `varlist'
+
+    // Legacy Form A using filename is an alias for the single final save.
+    if `"`using'"' != "" {
+        if `"`saving'"' != "" {
+            di as error "specify only one of using filename or saving()"
+            exit 198
+        }
+        local saving `"`using'"'
+    }
 
     // Reconcile orientation: ort() (legacy) vs orientation() (new)
     if "`ort'" != "" & "`orientation'" != "" {
@@ -896,7 +982,7 @@ program define _dea_parse_equal, rclass
         xord(`xord') yord(`yord')                     ///
         bootstrap(`bootstrap') envars(`envars')       ///
         reps1(`reps1') reps2(`reps2') level(`level')  ///
-        ifcond(`if') incond(`in') using(`using')
+        ifcond(`if') incond(`in')
 
     return add
 end
@@ -912,13 +998,13 @@ program define _dea_parse_standard, rclass
     [,
         Inputs(varlist numeric min=1)
         DMU(varname)
-        RTS(string)
+        Rts(string)
         ORT(string)
-        ORIentation(string)
+        ORientation(string)
         STAGE(integer 2)
         FDH
-        MODEL(string)
-        METHod(string)
+        MODel(string)
+        METhod(string)
         GENerate(name)
         TOLerance(real 1e-7)
         TRACE
@@ -948,7 +1034,7 @@ program define _dea_parse_standard, rclass
         XORD(varlist numeric)
         YORD(varlist numeric)
 
-        BOOTstrap
+        BOOtstrap
         ENVars(varlist numeric)
         REPS1(integer 100)
         REPS2(integer 2000)
@@ -1042,7 +1128,6 @@ program define _dea_normalize_options, rclass
         [Level(integer 95)]                 ///
         [IFCOND(string)]                    ///
         [INCOND(string)]                    ///
-        [USING(string)]                     ///
         [BAD(varlist numeric)]              ///
         [DIRection(string)]
 
@@ -1447,7 +1532,6 @@ program define _dea_model_dispatch, rclass
         [BAD(varlist numeric)] [DIRection(string)] ///
         [REFerence] [SAVERef] [SAVEWeights] ///
         [TRACE] [DEBUG] ///
-        [SAVing(string)] [REPLACE] ///
         [SBMORT(integer 0)]
 
     // =================================================================
@@ -1586,19 +1670,6 @@ program define _dea_model_dispatch, rclass
     local _n_failed_save = r(n_failed)
 
     // =================================================================
-    // Save results if requested
-    // =================================================================
-    if "`saving'" != "" {
-        _dea_save, saving(`saving') `replace' ///
-            inputs(`inputs') outputs(`outputs') ///
-            dmu(`dmu') generate(`generate') touse(`touse') ///
-            weight_in_vars(`weight_in_vars') ///
-            weight_out_vars(`weight_out_vars') ///
-            weight_u0_var(`weight_u0_var') ///
-            `saveref'
-    }
-
-    // =================================================================
     // Return matrices (lambda, slack_in, slack_out)
     // NOTE: return matrix must come BEFORE return add (Stata 16)
     // Tempvars in _dea_model_dispatch scope survive until after return add.
@@ -1649,8 +1720,7 @@ program define _dea_fdh_dispatch, rclass
     syntax , Inputs(string) Outputs(string) DMU(varname) ///
         ORIentation(string) STAGE(integer) ///
         TOUSE(varname) GENerate(name) TOLerance(real) ///
-        [TRACE] [DEBUG] [REFerence] [SAVERef] ///
-        [SAVing(string)] [REPLACE]
+        [TRACE] [DEBUG] [REFerence] [SAVERef]
 
     // FDH uses dominance comparison; no LP solver is needed.
     // The Mata implementation is loaded from _dea_ipm.ado.
@@ -1752,8 +1822,7 @@ program define _dea_imprecise_dispatch, rclass
         [XLO(varlist numeric)] [XHI(varlist numeric)] ///
         [YLO(varlist numeric)] [YHI(varlist numeric)] ///
         [XORD(varlist numeric)] [YORD(varlist numeric)] ///
-        [TRACE] [DEBUG] ///
-        [SAVing(string)] [REPLACE]
+        [TRACE] [DEBUG]
 
     di as text _n "IDEA (Imprecise DEA)"
     di as text "{hline 50}"
@@ -2387,20 +2456,14 @@ end
 program define _dea_save
     syntax , SAVing(string) Inputs(string) Outputs(string) ///
         DMU(varname) GENerate(name) TOUSE(varname) ///
-        [REPLACE] [SAVERef] ///
-        [weight_in_vars(string)] [weight_out_vars(string)] [weight_u0_var(string)]
+        [REPLACE] [REFVARS(varlist numeric)] [WEIGHTVARS(varlist numeric)]
 
     preserve
     qui keep if `touse'
-    if "`saveref'" != "" {
-        qui save "`saving'", `replace'
-    }
-    else {
-        qui keep `dmu' `inputs' `outputs' `generate' `weight_in_vars' `weight_out_vars' `weight_u0_var'
-        qui save "`saving'", `replace'
-    }
+    qui keep `dmu' `inputs' `outputs' `generate' `refvars' `weightvars'
+    qui save "`saving'", `replace'
     restore
-    di as text _n "Results saved to: `saving'.dta"
+    di as text _n "Results saved to: `saving'"
 end
 
 
@@ -3894,5 +3957,61 @@ void _dea_sbmu_solve(string scalar inp_names,
     for (k = 1; k <= n; k++) {
         st_store(obs_idx[k], vi, scores[k])
     }
+}
+end
+
+
+// Persistent reference weights: safe names and sample-aligned storage.
+mata:
+void _dea_saveref_plan(string scalar dmu, string scalar touse)
+{
+    real colvector obs
+    string colvector ids
+    string rowvector names
+    string scalar base, name, suffix
+    real scalar j, serial
+    obs = selectindex(st_data(., touse))
+    if (st_isstrvar(dmu)) ids = st_sdata(obs, dmu)
+    else ids = strtrim(strofreal(st_data(obs, dmu), "%21.0g"))
+    names = J(1, 0, "")
+    for (j=1; j<=rows(obs); j++) {
+        base = strtoname("_ref_" + ids[j])
+        name = base
+        serial = 1
+        while (any(names :== name)) {
+            serial++
+            suffix = "_" + strofreal(serial)
+            name = substr(base, 1, 32-strlen(suffix)) + suffix
+        }
+        names = names, name
+    }
+    st_local("_ref_names", invtokens(names))
+}
+
+void _dea_saveref_store(string scalar dmu, string scalar touse,
+                       string scalar refvars, string scalar matname)
+{
+    real colvector obs
+    real rowvector vi
+    real matrix L
+    string colvector ids
+    string rowvector names
+    real scalar j
+    obs = selectindex(st_data(., touse))
+    names = tokens(refvars)
+    L = st_matrix(matname)
+    if (rows(L)!=rows(obs) | cols(L)!=cols(names)) _error(503)
+    if (st_isstrvar(dmu)) ids = st_sdata(obs, dmu)
+    else ids = strtrim(strofreal(st_data(obs, dmu), "%21.0g"))
+    vi = J(1, cols(names), .)
+    for (j=1; j<=cols(names); j++) {
+        vi[j] = st_addvar("double", names[j])
+        st_varlabel(vi[j], usubstr("Reference weight: peer " + strofreal(j) +
+                    ", DMU " + ids[j], 1, 80))
+        st_global(names[j]+"[dea_peer_id]", ids[j])
+        st_global(names[j]+"[dea_peer_index]", strofreal(j))
+        st_global(names[j]+"[dea_peer_dmu]", dmu)
+    }
+    st_store(obs, vi, L)
 }
 end

@@ -75,6 +75,13 @@ Use the help link to inspect syntax and examples on GitHub, or type
 
 ## Versions and feedback
 
+`dea` 2.0.29 fixes persistent `saveref` variables, refreshes returned results
+after automatic IPM retries, and saves only the final results once. Automatic
+DMU identifiers now preserve an existing `_dmu` by requiring an explicit
+`dmu()` choice. See the [reproduction tests](tests/README.md).
+The public parsers accept the help's documented minimum abbreviations and
+support legacy Form A `using filename` as an alternative to `saving()`.
+
 This is a development working copy. Individual command versions are recorded in
 their `.ado` headers; help revisions have a separate dated marker. A help-only
 revision does not change the computational command version. A future tagged

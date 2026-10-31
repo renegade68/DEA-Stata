@@ -1,6 +1,7 @@
 {smcl}
-{* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 2.0.28  05aug2026}{...}
+{* Help revision 2026-11-01: persistent reference weights, final-engine saving, automatic ID protection.}{...}
+{* Public option abbreviations and sequential examples validated; legacy using alias documented.}{...}
+{* *! version 2.0.29  01nov2026}{...}
 {viewerjumpto "Related article" "dea##publication"}{...}
 {vieweralsosee "[R] frontier" "help frontier"}{...}
 {vieweralsosee "[R] teradial" "help teradial"}{...}
@@ -29,6 +30,7 @@ Form A (legacy syntax)
 {cmd:dea}
 {it:inputvars} {cmd:=} {it:outputvars}
 {ifin}
+[{cmd:using} {it:filename}]
 [{cmd:,} {it:options}]
 
 
@@ -355,15 +357,32 @@ and {it:newvar}{cmd:_mid}.
 
 {phang}
 {cmd:dmu(}{it:varname}{cmd:)} specifies a string or numeric variable
-containing DMU identifiers for display purposes.
+containing DMU identifiers for display purposes. If omitted, {cmd:_dmu} is
+created from observation order. An existing {cmd:_dmu} is never overwritten:
+specify {cmd:dmu(_dmu)} to use it or supply another identifier variable.
 
 {phang}
 {cmd:reference} displays the reference set (peer DMUs and their weights) for
 each DMU in the results table.
 
 {phang}
-{cmd:saveref} saves reference weights (lambda values) as new variables named
-{cmd:_ref_}{it:dmuname}.
+{cmd:saveref} requires {cmd:reference} and is supported with radial
+{cmd:model(te)} or {cmd:model(supereff)}, without FDH or imprecise-data options.
+It saves the final
+engine's reference weights as persistent double variables. Names start with
+{cmd:_ref_} followed by a Stata-compatible form of the peer DMU identifier;
+duplicate names after conversion/truncation receive numeric suffixes.
+Existing reference variables are never overwritten; explicitly remove only
+reference variables that you intend to replace. If {cmd:generate()} itself
+conflicts with a planned reference name, choose a different score variable.
+The {cmd:replace} option controls the output file, not variables in memory.
+Variables are missing outside the evaluation sample. Their labels and
+{cmd:dea_peer_id}, {cmd:dea_peer_index}, and {cmd:dea_peer_dmu} characteristics
+record the mapping; {cmd:r(refvars)} gives variable names in lambda-column
+order. With {cmd:saving()}, the saved dataset contains DMU, input, output,
+score, and these persistent reference variables, without dispatcher tempvars.
+This adds one variable per peer DMU and can require substantial memory for
+large evaluation samples. Optimal peer weights need not be unique.
 
 {phang}
 {cmd:saveweights} saves optimal multiplier weights as new variables after
@@ -377,8 +396,19 @@ they are
 {cmd:stage(1)}, only the efficiency score is reported.
 
 {phang}
-{cmd:saving(}{it:filename}{cmd:)} saves detailed results including efficiency
-scores, lambda weights, and slacks to a Stata dataset.
+{cmd:saving(}{it:filename}{cmd:)} saves the evaluation sample's DMU identifier,
+inputs, outputs, and final efficiency score to a Stata dataset. The file is
+written once after any automatic engine retry. Persistent reference variables
+are included with {cmd:saveref}; multiplier weight variables are included with
+{cmd:model(multiplier) stage(2) saveweights}. Other user variables and internal
+temporary variables are excluded. Slack matrices, when available, are returned
+in {cmd:r(slack_in)} and {cmd:r(slack_out)} and are not automatically saved as
+dataset variables. A file-write failure does not roll back generated variables
+in memory.
+
+{phang}
+In the {it:inputvars} {cmd:=} {it:outputvars} syntax, legacy
+{cmd:using} {it:filename} is an alias for {cmd:saving()}. Specify one form only.
 
 {phang}
 {cmd:replace} permits {cmd:saving()} to overwrite an existing dataset.
@@ -559,6 +589,9 @@ production study.  The selected quantities are strictly positive.{p_end}
 identifier named {cmd:_dmu} was generated from observation order.  In saved
 research code, specify the model explicitly and use a verified identifier.{p_end}
 
+{pstd}The following repeated analyses specify {cmd:dmu()} explicitly to reuse
+their identifiers without replacing an automatically generated {cmd:_dmu}.{p_end}
+
     {title:Setup}
 
 {phang2}{cmd:. clear}{p_end}
@@ -574,70 +607,70 @@ research code, specify the model explicitly and use a verified identifier.{p_end
     {title:Basic radial efficiency}
 
 {pstd}CRS input-oriented (CCR model){p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) gen(theta)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) gen(theta) dmu(dmu)}{p_end}
 
 {pstd}VRS input-oriented (BCC model) with reference sets{p_end}
 {phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(vrs) ort(i) gen(te_vrs) dmu(dmu) reference}{p_end}
 
 {pstd}Output-oriented{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(vrs) ort(o) gen(te_out)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(vrs) ort(o) gen(te_out) dmu(dmu)}{p_end}
 
     {title:Non-radial models}
 
 {pstd}Slacks-based measure{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(sbm) rts(crs) gen(sbm_eff)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(sbm) rts(crs) gen(sbm_eff) dmu(dmu)}{p_end}
 
 {pstd}Additive model{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(additive) rts(vrs) gen(add)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(additive) rts(vrs) gen(add) dmu(dmu)}{p_end}
 
     {title:Economic efficiency}
 
 {pstd}Cost efficiency with input prices{p_end}
 {phang2}{cmd:. gen w1 = 10}{p_end}
 {phang2}{cmd:. gen w2 = 2}{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(cost) w(w1 w2) rts(vrs) gen(ce)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(cost) w(w1 w2) rts(vrs) gen(ce) dmu(dmu)}{p_end}
 
 {pstd}Revenue efficiency with output prices{p_end}
 {phang2}{cmd:. gen p1 = 5}{p_end}
 {phang2}{cmd:. gen p2 = 8}{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(revenue) p(p1 p2) gen(re)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(revenue) p(p1 p2) gen(re) dmu(dmu)}{p_end}
 
 {pstd}Profit efficiency with input and output prices{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(profit) w(w1 w2) p(p1 p2) rts(vrs) gen(pe)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(profit) w(w1 w2) p(p1 p2) rts(vrs) gen(pe) dmu(dmu)}{p_end}
 
 {pstd}Allocative efficiency decomposition{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(allocative) w(w1 w2) rts(vrs) gen(ae)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(allocative) w(w1 w2) rts(vrs) gen(ae) dmu(dmu)}{p_end}
 
     {title:Directional distance function}
 
 {pstd}Default direction (proportional){p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(ddf) rts(vrs) gen(beta)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(ddf) rts(vrs) gen(beta) dmu(dmu)}{p_end}
 
 {pstd}Custom direction vector{p_end}
 {phang2}{cmd:. gen gx1 = 1}{p_end}
 {phang2}{cmd:. gen gx2 = 1}{p_end}
 {phang2}{cmd:. gen gy1 = 1}{p_end}
 {phang2}{cmd:. gen gy2 = 1}{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(ddf) gx(gx1 gx2) gy(gy1 gy2) gen(b_unit)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(ddf) gx(gx1 gx2) gy(gy1 gy2) gen(b_unit) dmu(dmu)}{p_end}
 
     {title:Super-efficiency}
 
 {pstd}Radial super-efficiency{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(supereff) rts(crs) ort(i) gen(se)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(supereff) rts(crs) ort(i) gen(se) dmu(dmu)}{p_end}
 
 {pstd}Super-SBM{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(supersbm) rts(vrs) gen(ssbm)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(supersbm) rts(vrs) gen(ssbm) dmu(dmu)}{p_end}
 
     {title:Multiplier (dual) model}
 
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(multiplier) rts(crs) ort(i) gen(mult) saveweights}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(multiplier) rts(crs) ort(i) gen(mult) saveweights dmu(dmu)}{p_end}
 
     {title:Free disposal hull}
 
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(fdh) gen(fdh_eff)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(fdh) gen(fdh_eff) dmu(dmu)}{p_end}
 
 {pstd}Shorthand using {cmd:fdh} flag{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, fdh gen(fdh_eff2)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, fdh gen(fdh_eff2) dmu(dmu)}{p_end}
 
     {title:Imprecise DEA (IDEA)}
 
@@ -646,14 +679,14 @@ research code, specify the model explicitly and use a verified identifier.{p_end
 {phang2}{cmd:. gen emp_hi = i_employee * 1.1}{p_end}
 {phang2}{cmd:. gen area_lo = i_area * 0.9}{p_end}
 {phang2}{cmd:. gen area_hi = i_area * 1.1}{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(imprecise) xlo(emp_lo area_lo) xhi(emp_hi area_hi) gen(idea)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(imprecise) xlo(emp_lo area_lo) xhi(emp_hi area_hi) gen(idea) dmu(dmu)}{p_end}
 
 {pstd}Interval data on both inputs and outputs{p_end}
 {phang2}{cmd:. gen sales_lo = o_sales * 0.95}{p_end}
 {phang2}{cmd:. gen sales_hi = o_sales * 1.05}{p_end}
 {phang2}{cmd:. gen prof_lo = o_profits * 0.9}{p_end}
 {phang2}{cmd:. gen prof_hi = o_profits * 1.1}{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, xlo(emp_lo area_lo) xhi(emp_hi area_hi) ylo(sales_lo prof_lo) yhi(sales_hi prof_hi) gen(idea2)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, xlo(emp_lo area_lo) xhi(emp_hi area_hi) ylo(sales_lo prof_lo) yhi(sales_hi prof_hi) gen(idea2) dmu(dmu)}{p_end}
 
     {title:Undesirable outputs (DDF approach)}
 
@@ -666,17 +699,18 @@ research code, specify the model explicitly and use a verified identifier.{p_end
 {phang2}{cmd:. 110 32 385 40}{p_end}
 {phang2}{cmd:. 165 43 500 58}{p_end}
 {phang2}{cmd:. end}{p_end}
+{phang2}{cmd:. gen long plant = _n}{p_end}
 
 {pstd}Contract bad outputs (SO2) while expanding good outputs{p_end}
-{phang2}{cmd:. dea capital labor = electricity, model(undesirable) bad(so2) rts(vrs) gen(ddf_u)}{p_end}
+{phang2}{cmd:. dea capital labor = electricity, model(undesirable) bad(so2) rts(vrs) gen(ddf_u) dmu(plant)}{p_end}
 
 {pstd}Contract inputs and bad outputs simultaneously{p_end}
-{phang2}{cmd:. dea capital labor = electricity, model(undesirable) bad(so2) direction(xyb) gen(ddf_xyb)}{p_end}
+{phang2}{cmd:. dea capital labor = electricity, model(undesirable) bad(so2) direction(xyb) gen(ddf_xyb) dmu(plant)}{p_end}
 
     {title:SBM with undesirable outputs (Tone 2004)}
 
 {pstd}Non-radial efficiency with bad outputs{p_end}
-{phang2}{cmd:. dea capital labor = electricity, model(sbmundesirable) bad(so2) rts(vrs) gen(sbmu)}{p_end}
+{phang2}{cmd:. dea capital labor = electricity, model(sbmundesirable) bad(so2) rts(vrs) gen(sbmu) dmu(plant)}{p_end}
 
     {title:Congestion analysis (Cooper et al. 2004)}
 
@@ -707,7 +741,7 @@ research code, specify the model explicitly and use a verified identifier.{p_end
 {phang2}{cmd:. end}{p_end}
 
 {pstd}Radial super-efficiency with reference set display{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(supereff) rts(vrs) ort(i) gen(se_vrs) reference}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(supereff) rts(vrs) ort(i) gen(se_vrs) reference dmu(dmu)}{p_end}
 {pstd}In this VRS leave-one-out example, stores B and E cannot be dominated
 by a convex combination of the remaining stores. Their scores are missing
 and the command reports two failed DMUs; this illustrates infeasibility,
@@ -717,7 +751,7 @@ not a complete ranking. Inspect missing scores before interpreting results.{p_en
 
 
 {pstd}Save super-efficiency reference weights as variables{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(supereff) rts(crs) ort(i) gen(se_crs) reference saveref}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, model(supereff) rts(crs) ort(i) gen(se_crs) reference saveref dmu(dmu)}{p_end}
 
     {title:Bootstrap bias correction}
 
@@ -725,30 +759,30 @@ not a complete ranking. Inspect missing scores before interpreting results.{p_en
 for substantive inference. See {help dea_sw2007} for a complete two-stage
 example with environmental variables.{p_end}
 {phang2}{cmd:. set seed 12345}{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(vrs) ort(i) gen(te_bc) bootstrap reps1(100)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(vrs) ort(i) gen(te_bc) bootstrap reps1(100) dmu(dmu)}{p_end}
 
     {title:Engine and syntax options}
 
 {pstd}Using the Simplex engine{p_end}
 {pstd}Force the package-supplied Two-Phase Revised Simplex engine instead of
 automatic engine selection.{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) engine(simplex) gen(theta_s)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) engine(simplex) gen(theta_s) dmu(dmu)}{p_end}
 
 {pstd}Using {cmd:method()} synonym{p_end}
 {pstd}{cmd:method(simplex)} is accepted as a synonym for {cmd:engine(simplex)}
 for backward compatibility.{p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) method(simplex) gen(theta_m)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) ort(i) method(simplex) gen(theta_m) dmu(dmu)}{p_end}
 
 {pstd}Extended syntax form (Form B){p_end}
-{phang2}{cmd:. dea o_sales o_profits, inputs(i_employee i_area) rts(vrs) gen(te_vrs2)}{p_end}
+{phang2}{cmd:. dea o_sales o_profits, inputs(i_employee i_area) rts(vrs) gen(te_vrs2) dmu(dmu)}{p_end}
 
 {pstd}Single-stage (no slack maximization){p_end}
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) stage(1) gen(theta_s1)}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(crs) stage(1) gen(theta_s1) dmu(dmu)}{p_end}
 
 {pstd}Save results to a temporary dataset{p_end}
 {phang2}{cmd:. tempfile dea_results}{p_end}
 
-{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(vrs) gen(te) saving("`dea_results'") replace}{p_end}
+{phang2}{cmd:. dea i_employee i_area = o_sales o_profits, rts(vrs) gen(te) saving("`dea_results'") replace dmu(dmu)}{p_end}
 
 
 
@@ -789,6 +823,7 @@ for backward compatibility.{p_end}
 {synopt:{cmd:r(inputs)}}input variable names{p_end}
 {synopt:{cmd:r(outputs)}}output variable names{p_end}
 {synopt:{cmd:r(generate)}}name of generated efficiency variable{p_end}
+{synopt:{cmd:r(refvars)}}persistent reference variables in lambda-column order when {cmd:saveref} is used{p_end}
 
 {p2col 5 24 28 2: Matrices}{p_end}
 {synopt:{cmd:r(efficiency)}}efficiency scores ({it:N} x 1){p_end}
