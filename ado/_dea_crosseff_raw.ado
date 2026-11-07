@@ -1,4 +1,4 @@
-*! version 1.0.0 07nov2026
+*! version 1.0.1 08nov2026
 *! Failure-only certified original-unit weights and bounded exact peer arithmetic.
 version 16.0
 capture mata: mata drop _c84_work()
@@ -238,7 +238,7 @@ real rowvector _c84_guard(struct _C84_Model scalar A,real rowvector x,
  gap=_c84_value(r);if(_c84_gt(r,qt,W)) ok=0
  return((ok & bounds & !W.error,eq,iq,gap,bounds,W.error,W.ops,W.maxlimbs))
 }
-real scalar _c84_ready() return(8401)
+real scalar _c84_ready() return(8402)
 struct _C84_Q scalar _c84_mul(struct _C84_Q scalar a,struct _C84_Q scalar b,struct _C58_Work scalar W)
 {
  struct _C84_Q scalar q
@@ -291,7 +291,8 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
  real rowvector sol,diag,g,ed,c2,trial,check
  real matrix G,G2,F,Traw
  real colvector h,h2,fb
- real scalar attempt,rc,obj,ops,j,ce,d
+ real scalar attempt,rc,obj,ops,j,ce,d,decoder_extended
+ real colvector decoder_values
  d=cols(X)+cols(Y)+free;x=J(1,d,.);score=.;stage=0
  rd=(1,0,0,.,.,0,.,.,0,0,6,.,.,.,0,0,0)
  scaling=J(1,0,.)
@@ -313,10 +314,15 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
   W=_c84_work();opt=_c84_dot(A.c,trial,0,W);g=_c84_guard(A,trial,opt,tol)
   if(!g[1] | W.error) {rd[11]=9;continue;}
   rd[3]=attempt;scaling=(A.oe,A.ve,A.re)
-  _c58_fit(A.qc*A.S,A.qE*A.S,A.qb,A.qU*A.S,A.qub,tol,p,G,h)
+  _c58_fit(A.qc*A.S,A.qE*A.S,A.qb,A.qU*A.S,A.qub,tol,p,G,h,1)
   rd[4..5]=(p.status,p.reason);pd=_c60_certdiag(p,1);pt=p.trace62
   link[1]=p.status;link[5]=p.ops;link[7]=p.solver_status;link[9]=p.reason
   if(p.status!=1) {rd[11]=7;break;}
+  // Broader secondary decoding only when this primary model was outside the
+  // old coefficient domain. Existing recovered primary/secondary rows keep it.
+  decoder_values=abs(vec(G)\h\(A.qc*A.S)')
+  decoder_extended=any((decoder_values:>0):&(decoder_values:<1.1830521861667747e-271)) | any(decoder_values:>8.452712498170644e270)
+
   trial=_c84_point(A.ve,free,p,ed);rd[16]=rd[16]+ed[3]
   if(!ed[1]) {rd[11]=8;rd[17]=1;break;}
   W=_c84_work();opt=_c84_objective(A,p,W)
@@ -333,7 +339,7 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
    if(hasmissing(Traw)) {rd[11]=12;break;}
    _c70_build(X,Y,index,out,method=="aggressive",Traw,c2,exactC,ce,od)
    if(od[2]!=1) {rd[11]=12;break;}
-   _c70_fit(c2,F,fb,A.qU*A.S,A.qub,tol,exactC,ce,od,s,G2,h2)
+   _c70_fit(c2,F,fb,A.qU*A.S,A.qub,tol,exactC,ce,od,s,G2,h2,decoder_extended)
    rd[7..8]=(s.status,s.reason);sd=_c60_certdiag(s,rows(F));st=s.trace62
    link[2]=s.status;link[6]=s.ops;link[8]=s.solver_status
    if(s.trace62[16]==1) rd[11]=4

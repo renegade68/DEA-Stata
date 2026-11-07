@@ -159,6 +159,7 @@
   "tests/test_core_bootstrap.py",
   "tests/test_core_retries.py",
   "tests/test_crosseff_cerange.py",
+  "tests/test_crosseff_decoder.py",
   "tests/test_crosseff_lp.py",
   "tests/test_crosseff_models.py",
   "tests/test_crosseff_objective.py",

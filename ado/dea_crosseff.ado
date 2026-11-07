@@ -1,4 +1,4 @@
-*! version 1.10.0 07nov2026
+*! version 1.10.1 08nov2026
 *! Peer-only objectives, exact intended-sum certification and build diagnostics.
 *! Cross-efficiency: native IPM default and bounded explicit simplex certificates.
 *! 2026-11-02: explicit input VRS Lim-Zhu peer formula; preserve legacy default.
@@ -40,6 +40,7 @@
 *!   1.1.0  11feb2026  Unified syntax: supports both
 *!                        dea_crosseff x = y, [options]  (Form A)
 *!                        dea_crosseff, inputs(x) outputs(y) [options] (Form B)
+*!   1.10.1 08nov2026 Scoped finite decoder for failed raw primaries; matched helper ABI.
 *!   1.0.0  06feb2026  Initial packaged version; based on earlier teaching/seminar versions
 
 /**
@@ -259,7 +260,7 @@ program define dea_crosseff, rclass
             mata: _dea_rec_abort(); _rsm_audit_reset(0); _rsm_success_reset(1,0); _dea_link_reset(2,0)
             mata: _c57_context_defaults(`solver_snapshot')
             local reload_exact=0
-            capture mata: assert(_c58_cert_ready()==6201 & findexternal("_c60_certdiag()")!=NULL & findexternal("_c61_recover()")!=NULL & findexternal("_c61_pick()")!=NULL & findexternal("_c61_basis()")!=NULL & findexternal("_c61_active()")!=NULL & findexternal("_c62_ray()")!=NULL & findexternal("_c62_initial()")!=NULL & findexternal("_c62_empty_trace()")!=NULL)
+            capture mata: assert(_c58_cert_ready()==6202 & findexternal("_c58_fit()")!=NULL & findexternal("_c58b_decode()")!=NULL & findexternal("_c60_certdiag()")!=NULL & findexternal("_c61_recover()")!=NULL & findexternal("_c61_pick()")!=NULL & findexternal("_c61_basis()")!=NULL & findexternal("_c61_active()")!=NULL & findexternal("_c62_ray()")!=NULL & findexternal("_c62_initial()")!=NULL & findexternal("_c62_empty_trace()")!=NULL)
             if _rc {
                 capture mata: mata drop _c58_multiplier()
                 capture mata: mata drop _c57_compute()
@@ -267,25 +268,25 @@ program define dea_crosseff, rclass
                 quietly run "`r(fn)'"
                 local reload_exact=1
             }
-            mata: assert(_c58_cert_ready()==6201 & findexternal("_c60_certdiag()")!=NULL & findexternal("_c61_recover()")!=NULL & findexternal("_c61_pick()")!=NULL & findexternal("_c61_basis()")!=NULL & findexternal("_c61_active()")!=NULL & findexternal("_c62_ray()")!=NULL & findexternal("_c62_initial()")!=NULL & findexternal("_c62_empty_trace()")!=NULL)
-            capture mata: assert(_c70_exact_ready()==7001 & findexternal("_c70_build()")!=NULL & findexternal("_c70_fit()")!=NULL & findexternal("_c70_value()")!=NULL & findexternal("_c70_decode()")!=NULL & findexternal("_c70b_certify()")!=NULL & findexternal("_c70b_solve()")!=NULL & findexternal("_c70u_update()")!=NULL & findexternal("_c70r_repair()")!=NULL & findexternal("_c70_recover()")!=NULL & findexternal("_c70_ray()")!=NULL)
+            mata: assert(_c58_cert_ready()==6202 & findexternal("_c58_fit()")!=NULL & findexternal("_c58b_decode()")!=NULL & findexternal("_c60_certdiag()")!=NULL & findexternal("_c61_recover()")!=NULL & findexternal("_c61_pick()")!=NULL & findexternal("_c61_basis()")!=NULL & findexternal("_c61_active()")!=NULL & findexternal("_c62_ray()")!=NULL & findexternal("_c62_initial()")!=NULL & findexternal("_c62_empty_trace()")!=NULL)
+            capture mata: assert(_c70_exact_ready()==7002 & findexternal("_c70_build()")!=NULL & findexternal("_c70_fit()")!=NULL & findexternal("_c70_value()")!=NULL & findexternal("_c70_decode()")!=NULL & findexternal("_c70b_certify()")!=NULL & findexternal("_c70b_solve()")!=NULL & findexternal("_c70u_update()")!=NULL & findexternal("_c70r_repair()")!=NULL & findexternal("_c70_recover()")!=NULL & findexternal("_c70_ray()")!=NULL)
             if _rc | `reload_exact' {
                 quietly findfile _dea_crosseff_exactobjective.ado
                 quietly run "`r(fn)'"
             }
-            mata: assert(_c70_exact_ready()==7001 & findexternal("_c70_build()")!=NULL & findexternal("_c70_fit()")!=NULL & findexternal("_c70_value()")!=NULL & findexternal("_c70_decode()")!=NULL & findexternal("_c70b_certify()")!=NULL & findexternal("_c70b_solve()")!=NULL & findexternal("_c70u_update()")!=NULL & findexternal("_c70r_repair()")!=NULL & findexternal("_c70_recover()")!=NULL & findexternal("_c70_ray()")!=NULL)
-            capture mata: assert(_c84_ready()==8401 & findexternal("_c84_work()")!=NULL & findexternal("_c84_log()")!=NULL & findexternal("_c84_scale()")!=NULL & findexternal("_c84_coefficient()")!=NULL & findexternal("_c84_build()")!=NULL & findexternal("_c84_dyad()")!=NULL & findexternal("_c84_number()")!=NULL & findexternal("_c84_abs()")!=NULL & findexternal("_c84_sub()")!=NULL & findexternal("_c84_div()")!=NULL & findexternal("_c84_gt()")!=NULL & findexternal("_c84_value()")!=NULL & findexternal("_c84_dot()")!=NULL & findexternal("_c84_objective()")!=NULL & findexternal("_c84_point()")!=NULL & findexternal("_c84_guard()")!=NULL & findexternal("_c84_ready()")!=NULL & findexternal("_c84_mul()")!=NULL & findexternal("_c84_peer()")!=NULL & findexternal("_c84_multiplier()")!=NULL & findexternal("_C84_Model()")!=NULL & findexternal("_C84_Q()")!=NULL)
+            mata: assert(_c70_exact_ready()==7002 & findexternal("_c70_build()")!=NULL & findexternal("_c70_fit()")!=NULL & findexternal("_c70_value()")!=NULL & findexternal("_c70_decode()")!=NULL & findexternal("_c70b_certify()")!=NULL & findexternal("_c70b_solve()")!=NULL & findexternal("_c70u_update()")!=NULL & findexternal("_c70r_repair()")!=NULL & findexternal("_c70_recover()")!=NULL & findexternal("_c70_ray()")!=NULL)
+            capture mata: assert(_c84_ready()==8402 & findexternal("_c84_work()")!=NULL & findexternal("_c84_log()")!=NULL & findexternal("_c84_scale()")!=NULL & findexternal("_c84_coefficient()")!=NULL & findexternal("_c84_build()")!=NULL & findexternal("_c84_dyad()")!=NULL & findexternal("_c84_number()")!=NULL & findexternal("_c84_abs()")!=NULL & findexternal("_c84_sub()")!=NULL & findexternal("_c84_div()")!=NULL & findexternal("_c84_gt()")!=NULL & findexternal("_c84_value()")!=NULL & findexternal("_c84_dot()")!=NULL & findexternal("_c84_objective()")!=NULL & findexternal("_c84_point()")!=NULL & findexternal("_c84_guard()")!=NULL & findexternal("_c84_ready()")!=NULL & findexternal("_c84_mul()")!=NULL & findexternal("_c84_peer()")!=NULL & findexternal("_c84_multiplier()")!=NULL & findexternal("_C84_Model()")!=NULL & findexternal("_C84_Q()")!=NULL)
             if _rc | `reload_exact' {
                 quietly findfile _dea_crosseff_raw.ado
                 quietly run "`r(fn)'"
             }
-            mata: assert(_c84_ready()==8401 & findexternal("_c84_work()")!=NULL & findexternal("_c84_log()")!=NULL & findexternal("_c84_scale()")!=NULL & findexternal("_c84_coefficient()")!=NULL & findexternal("_c84_build()")!=NULL & findexternal("_c84_dyad()")!=NULL & findexternal("_c84_number()")!=NULL & findexternal("_c84_abs()")!=NULL & findexternal("_c84_sub()")!=NULL & findexternal("_c84_div()")!=NULL & findexternal("_c84_gt()")!=NULL & findexternal("_c84_value()")!=NULL & findexternal("_c84_dot()")!=NULL & findexternal("_c84_objective()")!=NULL & findexternal("_c84_point()")!=NULL & findexternal("_c84_guard()")!=NULL & findexternal("_c84_ready()")!=NULL & findexternal("_c84_mul()")!=NULL & findexternal("_c84_peer()")!=NULL & findexternal("_c84_multiplier()")!=NULL & findexternal("_C84_Model()")!=NULL & findexternal("_C84_Q()")!=NULL)
-            capture mata: assert(_c57_simplex_ready()==8401 & findexternal("_c57_multiplier()")!=NULL & findexternal("_c58_multiplier()")!=NULL & findexternal("_c57_compute()")!=NULL)
+            mata: assert(_c84_ready()==8402 & findexternal("_c84_work()")!=NULL & findexternal("_c84_log()")!=NULL & findexternal("_c84_scale()")!=NULL & findexternal("_c84_coefficient()")!=NULL & findexternal("_c84_build()")!=NULL & findexternal("_c84_dyad()")!=NULL & findexternal("_c84_number()")!=NULL & findexternal("_c84_abs()")!=NULL & findexternal("_c84_sub()")!=NULL & findexternal("_c84_div()")!=NULL & findexternal("_c84_gt()")!=NULL & findexternal("_c84_value()")!=NULL & findexternal("_c84_dot()")!=NULL & findexternal("_c84_objective()")!=NULL & findexternal("_c84_point()")!=NULL & findexternal("_c84_guard()")!=NULL & findexternal("_c84_ready()")!=NULL & findexternal("_c84_mul()")!=NULL & findexternal("_c84_peer()")!=NULL & findexternal("_c84_multiplier()")!=NULL & findexternal("_C84_Model()")!=NULL & findexternal("_C84_Q()")!=NULL)
+            capture mata: assert(_c57_simplex_ready()==8402 & findexternal("_c57_multiplier()")!=NULL & findexternal("_c58_multiplier()")!=NULL & findexternal("_c57_compute()")!=NULL)
             if _rc {
                 quietly findfile _dea_crosseff_simplex.ado
                 quietly run "`r(fn)'"
             }
-            mata: assert(_c57_simplex_ready()==8401 & findexternal("_c57_multiplier()")!=NULL & findexternal("_c58_multiplier()")!=NULL & findexternal("_c57_compute()")!=NULL)
+            mata: assert(_c57_simplex_ready()==8402 & findexternal("_c57_multiplier()")!=NULL & findexternal("_c58_multiplier()")!=NULL & findexternal("_c57_compute()")!=NULL)
             if "`cerange'"!="" {
                 capture mata: assert(_c76_ready()==7601 & _c77_ready()==7701 & findexternal("_c76_ready()")!=NULL & findexternal("_c76_budget()")!=NULL & findexternal("_c76_begin()")!=NULL & findexternal("_c76_allow()")!=NULL & findexternal("_c76_charge()")!=NULL & findexternal("_c76_work()")!=NULL & findexternal("_c76_empty()")!=NULL & findexternal("_c76_endempty()")!=NULL & findexternal("_c76_result()")!=NULL & findexternal("_c76_certpoint()")!=NULL & findexternal("_c76_pack()")!=NULL & findexternal("_c76_dot()")!=NULL & findexternal("_c76_cmp()")!=NULL & findexternal("_c76_check()")!=NULL & findexternal("_c76_positive()")!=NULL & findexternal("_c76_homogenize()")!=NULL & findexternal("_c76_dehomogenize()")!=NULL & findexternal("_c76_display()")!=NULL & findexternal("_c76_solve()")!=NULL & findexternal("_c76_endpoint()")!=NULL & findexternal("_c76_cell()")!=NULL & findexternal("_c76_coeff()")!=NULL & findexternal("_c76_original()")!=NULL & findexternal("_c76_peer()")!=NULL & findexternal("_C76_Budget()")!=NULL & findexternal("_C76_Result()")!=NULL & findexternal("_C76_End()")!=NULL & findexternal("_C76_Point()")!=NULL & findexternal("_c77_ready()")!=NULL & findexternal("_c77_start()")!=NULL & findexternal("_c77_begin()")!=NULL & findexternal("_c77_face()")!=NULL & findexternal("_c77_finish()")!=NULL)
                 if _rc | `reload_exact' {

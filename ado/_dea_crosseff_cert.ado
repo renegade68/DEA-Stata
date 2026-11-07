@@ -1,4 +1,4 @@
-*! version 1.0.0 06nov2026
+*! version 1.0.1 08nov2026
 *! Bounded exact cross-efficiency certificates, recovery and terminal ray checks.
 version 16.0
 capture mata: mata drop _c58_value()
@@ -192,13 +192,14 @@ real rowvector _c58b_div(real rowvector a0,real rowvector b0,struct _C58_Work sc
  if(rem[1]!=0) {W.error=3;return((0,0));}
  return(_c58b_norm(out))
 }
-// Exact normal binary64 decomposition x=integer*2^e. Unsupported range=>unknown.
-real rowvector _c58b_decode(real scalar x,real scalar e,struct _C58_Work scalar W)
+// Default coefficient domain is unchanged. Failure-only callers may opt in to
+// finite binary64 magnitudes, including subnormals; integer budgets are unchanged.
+real rowvector _c58b_decode(real scalar x,real scalar e,struct _C58_Work scalar W, | real scalar wide_decode)
 {
  real scalar m,k,reconstructed,i
  e=0
  if(x==0) return((0,0))
- if(missing(x) | abs(x)<1.1830521861667747e-271 | abs(x)>8.452712498170644e270) {W.error=4;return((0,0));}
+ if(missing(x) | missing(abs(x)) | (wide_decode!=1 & (abs(x)<1.1830521861667747e-271 | abs(x)>8.452712498170644e270))) {W.error=4;return((0,0));}
  // Do not form powers via logarithms or general exponentiation: that path can
  // round even nominal powers of two. Each step here is exact binary scaling.
  m=abs(x);k=0
@@ -230,7 +231,7 @@ real rowvector _c58b_shift(real rowvector a0,real scalar e,struct _C58_Work scal
 // A_i = G_i * 2^-ex_i, H_i = h_i * 2^(-ex_i-rhs_exponent).
 // rhs_exponent <= 0; A and H are exact integers. Never round h.
 transmorphic scalar _c58i_rows(real matrix G,real colvector h,
- real rowvector exponents,real scalar rhs_exponent,struct _C58_Work scalar W)
+ real rowvector exponents,real scalar rhs_exponent,struct _C58_Work scalar W, | real scalar wide_decode)
 {
  transmorphic scalar T
  real scalar i,j,e,emin
@@ -239,7 +240,7 @@ transmorphic scalar _c58i_rows(real matrix G,real colvector h,
  for(i=1;i<=rows(G);i++) {
   es=J(1,cols(G),0);emin=.
   for(j=1;j<=cols(G);j++) {
-   a=_c58b_decode(G[i,j],e,W);asarray(T,(i,j),a);es[j]=e
+   a=_c58b_decode(G[i,j],e,W,wide_decode);asarray(T,(i,j),a);es[j]=e
    if(a[1]!=0) emin=min((emin,e))
   }
   if(emin==.) emin=0
@@ -247,7 +248,7 @@ transmorphic scalar _c58i_rows(real matrix G,real colvector h,
   for(j=1;j<=cols(G);j++) {
    a=asarray(T,(i,j));a=_c58b_shift(a,es[j]-emin,W);asarray(T,(i,j),a)
   }
-  a=_c58b_decode(h[i],e,W);asarray(T,(i,cols(G)+1),a);he[i]=e-emin
+  a=_c58b_decode(h[i],e,W,wide_decode);asarray(T,(i,cols(G)+1),a);he[i]=e-emin
   if(a[1]!=0) rhs_exponent=min((rhs_exponent,he[i]))
   if(W.error) return(T)
  }
@@ -301,7 +302,7 @@ real matrix _c58b_pack(transmorphic scalar T,real scalar col,real scalar n,real 
  return(out)
 }
 struct _C58_Cert scalar _c58b_certify(real rowvector c,real matrix G,
- real colvector h,real scalar ne,real colvector choices,real scalar budget)
+ real colvector h,real scalar ne,real colvector choices,real scalar budget, | real scalar wide_decode)
 {
  struct _C58_Work scalar W
  struct _C58_Cert scalar out
@@ -322,7 +323,7 @@ struct _C58_Cert scalar _c58b_certify(real rowvector c,real matrix G,
   hasmissing(G) | hasmissing(h) | hasmissing(c) | rows(choices)<n |
   missing(budget) | budget<0 | ne<0 | ne>rows(G)) return(out)
  for(i=1;i<=rows(choices);i++) if(choices[i]<1 | choices[i]>rows(G) | choices[i]!=floor(choices[i])) return(out)
- out.phase=1;A=_c58i_rows(G,h,ex,re,W);C=_c58i_rows(c,J(1,1,0),ce,cre,W);out.phase_cost[1]=W.ops
+ out.phase=1;A=_c58i_rows(G,h,ex,re,W,wide_decode);C=_c58i_rows(c,J(1,1,0),ce,cre,W,wide_decode);out.phase_cost[1]=W.ops
  if(!W.error) {
   out.phase=2
   ids=(rows(choices)==n ? choices : _c58b_pick(A,choices,n,W))
@@ -414,7 +415,7 @@ struct _C58_Cert scalar _c58b_certify(real rowvector c,real matrix G,
 // Certification above uses only original coefficients, bounds and RHS values.
 struct _C58_Cert scalar _c58b_solve(real rowvector c,real matrix E,real colvector b,
  real matrix U,real colvector ub,real rowvector lo,real rowvector hi,
- real scalar tol,real scalar budget,real matrix G,real colvector h)
+ real scalar tol,real scalar budget,real matrix G,real colvector h, | real scalar wide_decode)
 {
  struct RSM_Result scalar fit
  struct _C58_Cert scalar out
@@ -436,7 +437,7 @@ struct _C58_Cert scalar _c58b_solve(real rowvector c,real matrix E,real colvecto
   for(j=1;j<=rows(ineqmap);j++) if(!any(fit.basiscols:==n+j)) choices=choices\ineqmap[j]
   if(ne) choices=choices\(1::ne)
  }
- out=_c58b_certify(c,G,h,ne,choices,budget);out.solver_status=fit.status
+ out=_c58b_certify(c,G,h,ne,choices,budget,wide_decode);out.solver_status=fit.status
  return(out)
 }
 
@@ -446,7 +447,7 @@ struct _C58_Cert scalar _c58b_solve(real rowvector c,real matrix E,real colvecto
 // J_new=sign(s)*(s*J-J[,k]*q+Db*J[,k]*e_k')/Db.
 struct _C58_Cert scalar _c58u_update(real rowvector c,real matrix G,
  real colvector h,real scalar ne,struct _C58_Cert scalar prior,
- real scalar position,real scalar added,real scalar budget)
+ real scalar position,real scalar added,real scalar budget, | real scalar wide_decode)
 {
  struct _C58_Work scalar W
  struct _C58_Cert scalar out
@@ -474,7 +475,7 @@ struct _C58_Cert scalar _c58u_update(real rowvector c,real matrix G,
  if(cols(prior.basis_denominator)<2) return(out)
  old_den=prior.basis_denominator
  if(old_den[1]!=1) return(out)
- out.phase=1;A=_c58i_rows(G,h,ex,re,W);C=_c58i_rows(c,J(1,1,0),ce,cre,W);out.phase_cost[1]=W.ops
+ out.phase=1;A=_c58i_rows(G,h,ex,re,W,wide_decode);C=_c58i_rows(c,J(1,1,0),ce,cre,W,wide_decode);out.phase_cost[1]=W.ops
  if(!W.error) {
   out.phase=2
   if(re!=prior.rhs_exponent | any(ex[prior.basis]:!=prior.row_exponent[1..n])) W.error=5
@@ -582,7 +583,7 @@ real scalar _c58r_ratio_compare(real rowvector a,real rowvector b,
 // Plan fields: mode(1 primal,2 dual),added row,removed row,position,stop reason.
 // Only exact integer signs and cross-products determine the exchange.
 real rowvector _c58r_plan(real matrix G,real colvector h,real scalar ne,
- struct _C58_Cert scalar fit,struct _C58_Work scalar W)
+ struct _C58_Cert scalar fit,struct _C58_Work scalar W, | real scalar wide_decode)
 {
  transmorphic scalar A
  real rowvector ex,q,a,b,bestnum,bestden,num,den
@@ -593,7 +594,7 @@ real rowvector _c58r_plan(real matrix G,real colvector h,real scalar ne,
  primal=!any(fit.primal_sign:>0)
  dual=!any((fit.basis:>ne):&(fit.dual_sign:<0))
  if(!primal & !dual) return((0,0,0,0,2))
- A=_c58i_rows(G,h,ex,re,W)
+ A=_c58i_rows(G,h,ex,re,W,wide_decode)
  if(!W.error & re!=fit.rhs_exponent) {W.error=5;return((0,0,0,0,8));}
  bestnum=(0,0);bestden=(1,1)
  if(primal & !dual) {
@@ -637,7 +638,7 @@ real rowvector _c58r_plan(real matrix G,real colvector h,real scalar ne,
  return((0,0,0,0,1))
 }
 void _c58r_repair(string scalar tag,real rowvector c,real matrix G,real colvector h,
- real scalar ne,struct _C58_Cert scalar fit,real scalar maxpivots,real scalar totalbudget)
+ real scalar ne,struct _C58_Cert scalar fit,real scalar maxpivots,real scalar totalbudget, | real scalar wide_decode)
 {
  struct _C58_Work scalar W
  real matrix seen,trace
@@ -650,7 +651,7 @@ void _c58r_repair(string scalar tag,real rowvector c,real matrix G,real colvecto
   if(step>=maxpivots) {stop=6;break;}
   if(total>=totalbudget) {stop=7;break;}
   W.ops=0;W.limit=min((10000000,totalbudget-total));W.limbs=128;W.maxlimbs=0;W.error=0
-  plan=_c58r_plan(G,h,ne,fit,W);total=total+W.ops;maxlimbs=max((maxlimbs,W.maxlimbs))
+  plan=_c58r_plan(G,h,ne,fit,W,wide_decode);total=total+W.ops;maxlimbs=max((maxlimbs,W.maxlimbs))
   if(W.error) {stop=8;break;}
   if(plan[5]) {stop=plan[5];break;}
   if(total>=totalbudget) {stop=7;break;}
@@ -658,7 +659,7 @@ void _c58r_repair(string scalar tag,real rowvector c,real matrix G,real colvecto
   for(j=1;j<=rows(seen);j++) if(all(seen[j,.]:==key)) cycle=1
   if(cycle) {stop=5;break;}
   seen=seen\key;solverstatus=fit.solver_status
-  fit=_c58u_update(c,G,h,ne,fit,plan[4],plan[2],min((10000000,totalbudget-total)));fit.solver_status=solverstatus
+  fit=_c58u_update(c,G,h,ne,fit,plan[4],plan[2],min((10000000,totalbudget-total)),wide_decode);fit.solver_status=solverstatus
   total=total+fit.ops;maxlimbs=max((maxlimbs,fit.maxlimbs));step=step+1
   trace=trace\(step,plan[1..4],W.ops,fit.ops,fit.status,fit.reason,fit.phase,total)
  }
@@ -722,7 +723,7 @@ real rowvector _c58d_double(real rowvector a0,real rowvector d0)
 }
 
 
-real scalar _c58_cert_ready() return(6201)
+real scalar _c58_cert_ready() return(6202)
 // Exact dyadic scaling only. Free variables use opposite columns. Each
 // coefficient must round-trip under the column scaling or certification stops.
 real matrix _c58_map(real matrix E,real matrix U,real rowvector c,real scalar free,|real scalar map_reason)
@@ -747,18 +748,18 @@ real matrix _c58_map(real matrix E,real matrix U,real rowvector c,real scalar fr
 }
 void _c58_fit(real rowvector c,real matrix E,real colvector b,
  real matrix U,real colvector ub,real scalar tol,
- struct _C58_Cert scalar fit,real matrix G,real colvector h)
+ struct _C58_Cert scalar fit,real matrix G,real colvector h, | real scalar wide_decode)
 {
  real rowvector recovery,journal
- fit=_c58b_solve(-c,E,b,U,ub,J(1,cols(c),0),J(1,cols(c),.),tol,10000000,G,h)
- if(fit.status==0) _c58r_repair("",-c,G,h,rows(E),fit,16,80000000)
+ fit=_c58b_solve(-c,E,b,U,ub,J(1,cols(c),0),J(1,cols(c),.),tol,10000000,G,h,wide_decode)
+ if(fit.status==0) _c58r_repair("",-c,G,h,rows(E),fit,16,80000000,wide_decode)
  journal=_c62_initial(fit)
- if(fit.status!=1) {_c61_recover(-c,G,h,rows(E),fit,recovery,journal);fit.recovery=recovery;}
+ if(fit.status!=1) {_c61_recover(-c,G,h,rows(E),fit,recovery,journal,(fit.repair_steps<. ? fit.repair_steps : 0),wide_decode);fit.recovery=recovery;}
  fit.trace62=journal
 }
 // Convert the certified internal fraction once, combining split columns
 // before binary64 rounding. Exported doubles are checked separately.
-real rowvector _c58_point(real matrix T,struct _C58_Cert scalar fit)
+real rowvector _c58_point(real matrix T,struct _C58_Cert scalar fit, | real scalar wide_decode)
 {
  struct _C58_Work scalar W
  real rowvector out,a,N,D,z
@@ -771,10 +772,10 @@ real rowvector _c58_point(real matrix T,struct _C58_Cert scalar fit)
   real scalar emin
   emin=0
   for(j=1;j<=cols(T);j++) if(T[i,j]!=0) {
-   a=_c58b_decode(T[i,j],e,W);emin=min((emin,e))
+   a=_c58b_decode(T[i,j],e,W,wide_decode);emin=min((emin,e))
   }
   for(j=1;j<=cols(T);j++) if(T[i,j]!=0) {
-   a=_c58b_decode(T[i,j],e,W)
+   a=_c58b_decode(T[i,j],e,W,wide_decode)
    a=_c58b_shift(_c58b_mul(a,_c58b_norm(fit.numerator[j,.]),W),e-emin,W)
    N=_c58b_add(N,a,W)
   }
@@ -785,7 +786,7 @@ real rowvector _c58_point(real matrix T,struct _C58_Cert scalar fit)
  }
  return(out)
 }
-real scalar _c58_value(real rowvector c,struct _C58_Cert scalar fit)
+real scalar _c58_value(real rowvector c,struct _C58_Cert scalar fit, | real scalar wide_decode)
 {
  struct _C58_Work scalar W
  transmorphic scalar C
@@ -793,7 +794,7 @@ real scalar _c58_value(real rowvector c,struct _C58_Cert scalar fit)
  real scalar re,j
  if(fit.status!=1) return(.)
  W.ops=0;W.limit=10000000;W.limbs=512;W.maxlimbs=0;W.error=0
- C=_c58i_rows(c,J(1,1,0),ex,re,W);N=(0,0);D=fit.denominator
+ C=_c58i_rows(c,J(1,1,0),ex,re,W,wide_decode);N=(0,0);D=fit.denominator
  for(j=1;j<=cols(c);j++) N=_c58b_add(N,_c58b_mul(asarray(C,(1,j)),_c58b_norm(fit.numerator[j,.]),W),W)
  N=_c58b_shift(N,max((0,ex[1])),W);D=_c58b_shift(D,max((0,-ex[1])),W)
  z=_c58d_double(N,D)
@@ -851,7 +852,7 @@ real colvector _c61_pick(transmorphic scalar A,real colvector choices,
  return(J(0,1,.))
 }
 real colvector _c61_basis(real matrix G,real colvector h,real scalar ne,
- real colvector preferred,struct _C58_Work scalar W)
+ real colvector preferred,struct _C58_Work scalar W, | real scalar wide_decode)
 {
  transmorphic scalar A
  real colvector choices
@@ -859,20 +860,20 @@ real colvector _c61_basis(real matrix G,real colvector h,real scalar ne,
  real scalar i,re
  choices=(ne ? (1::ne) : J(0,1,.))
  for(i=1;i<=rows(preferred);i++) if(!any(choices:==preferred[i])) choices=choices\preferred[i]
- A=_c58i_rows(G,h,ex,re,W)
+ A=_c58i_rows(G,h,ex,re,W,wide_decode)
  if(W.error) return(J(0,1,.))
  return(_c61_pick(A,choices,cols(G),W))
 }
 // Recover the ORIGINAL active rows from an exact auxiliary point. No rounded
 // point or approximate active-set tolerance is used to construct the seed.
 real colvector _c61_active(real matrix G,real colvector h,real scalar ne,
- struct _C58_Cert scalar aux,struct _C58_Work scalar W)
+ struct _C58_Cert scalar aux,struct _C58_Work scalar W, | real scalar wide_decode)
 {
  transmorphic scalar A
  real colvector choices
  real rowvector ex,v,a,N
  real scalar i,j,re
- choices=J(0,1,.);A=_c58i_rows(G,h,ex,re,W)
+ choices=J(0,1,.);A=_c58i_rows(G,h,ex,re,W,wide_decode)
  for(i=1;i<=rows(G);i++) {
   v=_c58b_neg(_c58b_mul(asarray(A,(i,cols(G)+1)),aux.denominator,W))
   for(j=1;j<=cols(G);j++) {
@@ -890,7 +891,7 @@ real colvector _c61_active(real matrix G,real colvector h,real scalar ne,
 // x>=0 and t>=0. A known primal-feasible vertex is x=0,
 // t=max(0,abs(b),-u). Exact t=0 is required before returning to the original LP.
 void _c61_recover(real rowvector c,real matrix G,real colvector h,
- real scalar ne,struct _C58_Cert scalar fit,real rowvector report,|real rowvector journal,real scalar used_pivots)
+ real scalar ne,struct _C58_Cert scalar fit,real rowvector report,|real rowvector journal,real scalar used_pivots, real scalar wide_decode)
 {
  struct _C58_Work scalar W
  struct _C58_Cert scalar trial,aux
@@ -913,14 +914,14 @@ void _c61_recover(real rowvector c,real matrix G,real colvector h,
   for(i=rows(G)-n+1;i<=rows(G);i++) if(!any(preferred:==i)) preferred=preferred\i
   for(i=ne+1;i<=rows(G);i++) if(!any(preferred:==i)) preferred=preferred\i
   W.ops=0;W.limit=min((10000000,80000000-total));W.limbs=128;W.maxlimbs=0;W.error=0
-  ids=_c61_basis(G,h,ne,preferred,W);total=total+W.ops;width=max((width,W.maxlimbs))
+  ids=_c61_basis(G,h,ne,preferred,W,wide_decode);total=total+W.ops;width=max((width,W.maxlimbs))
   journal[26]=-1;journal[27]=(W.error ? 10+W.error : 2)
   if(!W.error & rows(ids)==n & total<80000000) {
-   trial=_c58b_certify(c,G,h,ne,ids,min((10000000,80000000-total)));hastrial=1
+   trial=_c58b_certify(c,G,h,ne,ids,min((10000000,80000000-total)),wide_decode);hastrial=1
    total=total+trial.ops;width=max((width,trial.maxlimbs));report[6]=trial.status
    if(trial.status==0 & total<80000000 & pivots<16) {
     remaining=trial.ops
-    _c58r_repair("",c,G,h,ne,trial,16-pivots,80000000-total+trial.ops)
+    _c58r_repair("",c,G,h,ne,trial,16-pivots,80000000-total+trial.ops,wide_decode)
     total=total+trial.ops-remaining
     width=max((width,trial.maxlimbs))
     pivots=pivots+trial.repair_steps;report[10]=trial.repair_steps;journal[9]=trial.repair_steps
@@ -941,11 +942,11 @@ void _c61_recover(real rowvector c,real matrix G,real colvector h,
   for(i=1;i<=rows(ph)-n-1;i++) if(-ph[i]==tau) {active=i;break;}
   if(active==0) active=rows(P)
   ids=(rows(P)-n::rows(P)-1)\active
-  aux=_c58b_certify(pc,P,ph,0,ids,min((10000000,80000000-total)))
+  aux=_c58b_certify(pc,P,ph,0,ids,min((10000000,80000000-total)),wide_decode)
   total=total+aux.ops;width=max((width,aux.maxlimbs))
   if(aux.status==0 & total<80000000 & pivots<16) {
    remaining=aux.ops
-   _c58r_repair("",pc,P,ph,0,aux,16-pivots,80000000-total+remaining)
+   _c58r_repair("",pc,P,ph,0,aux,16-pivots,80000000-total+remaining,wide_decode)
    total=total+aux.ops-remaining
    width=max((width,aux.maxlimbs))
    pivots=pivots+aux.repair_steps;report[9]=aux.repair_steps
@@ -957,14 +958,14 @@ void _c61_recover(real rowvector c,real matrix G,real colvector h,
    a=_c58b_norm(aux.numerator[n+1,.]);report[8]=(a[1]==0)
    if(a[1]==0 & total<80000000) {
     W.ops=0;W.limit=min((10000000,80000000-total));W.limbs=128;W.maxlimbs=0;W.error=0
-    ids=_c61_active(G,h,ne,aux,W);total=total+W.ops;width=max((width,W.maxlimbs))
+    ids=_c61_active(G,h,ne,aux,W,wide_decode);total=total+W.ops;width=max((width,W.maxlimbs))
     journal[32]=-1;journal[33]=(W.error ? 10+W.error : 2)
     if(!W.error & rows(ids)==n & total<80000000) {
-     trial=_c58b_certify(c,G,h,ne,ids,min((10000000,80000000-total)));hastrial=1
+     trial=_c58b_certify(c,G,h,ne,ids,min((10000000,80000000-total)),wide_decode);hastrial=1
      total=total+trial.ops;width=max((width,trial.maxlimbs))
      if(trial.status==0 & total<80000000 & pivots<16) {
       remaining=trial.ops
-      _c58r_repair("",c,G,h,ne,trial,16-pivots,80000000-total+remaining)
+      _c58r_repair("",c,G,h,ne,trial,16-pivots,80000000-total+remaining,wide_decode)
       total=total+trial.ops-remaining
       width=max((width,trial.maxlimbs))
       pivots=pivots+trial.repair_steps;report[10]=trial.repair_steps;journal[12]=trial.repair_steps
@@ -977,7 +978,7 @@ void _c61_recover(real rowvector c,real matrix G,real colvector h,
  }
  if(!success & hastrial & total<80000000) {
   W.ops=0;W.limit=min((10000000,80000000-total));W.limbs=128;W.maxlimbs=0;W.error=0
-  rayok=_c62_ray(c,G,h,ne,trial,W,terminal_ray)
+  rayok=_c62_ray(c,G,h,ne,trial,W,terminal_ray,wide_decode)
   total=total+W.ops;width=max((width,W.maxlimbs));journal[18]=W.ops
   if(rayok) {fit.ray=terminal_ray;fit.ray_num=trial.numerator;fit.ray_den=trial.denominator;}
  }
@@ -1009,7 +1010,7 @@ real rowvector _c62_initial(struct _C58_Cert scalar fit)
 }
 real scalar _c62_ray(real rowvector c,real matrix G,real colvector h,
  real scalar ne,struct _C58_Cert scalar fit,struct _C58_Work scalar W,
- real matrix ray)
+ real matrix ray, | real scalar wide_decode)
 {
  transmorphic scalar A,C,R
  real rowvector ex,ce,a,v,d
@@ -1019,7 +1020,7 @@ real scalar _c62_ray(real rowvector c,real matrix G,real colvector h,
     rows(fit.dual_sign)!=n | hasmissing(fit.primal_sign) | hasmissing(fit.dual_sign)) return(0)
  if(ne) if(any(fit.primal_sign[1..ne]:!=0)) return(0)
  if(rows(G)>ne) if(any(fit.primal_sign[ne+1..rows(G)]:>0)) return(0)
- A=_c58i_rows(G,h,ex,re,W);C=_c58i_rows(c,J(1,1,0),ce,cre,W)
+ A=_c58i_rows(G,h,ex,re,W,wide_decode);C=_c58i_rows(c,J(1,1,0),ce,cre,W,wide_decode)
  if(W.error) return(0)
  for(k=1;k<=n;k++) if(fit.basis[k]>ne & fit.dual_sign[k]<0) {
   R=asarray_create("real",2)

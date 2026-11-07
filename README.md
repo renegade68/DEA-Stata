@@ -6,12 +6,14 @@ Python dependencies and Stata discovery. Personal settings and generated test
 results are excluded from the public inventory. [Publication checks](tests/PUBLICATION.txt)
 cover paths, credentials, staged files and commit email metadata.
 
-`dea_crosseff` 1.10.0 adds failure-only certified recovery in original data
+`dea_crosseff` 1.10.1 adds failure-only certified recovery in original data
 units for explicit simplex. Accepted evaluator weights and self scores remain
 unchanged. Recovered rows use directly exported raw weights and bounded exact
 peer arithmetic, including input VRS Lim-Zhu. Unverified primary solutions stay
 unavailable; a failed secondary retains its certified primary weights.
-New matrix diagnostics distinguish recovery, denominator policy and arithmetic
+Version 1.10.1 extends finite coefficient decoding only for failed raw
+primaries and their qualifying secondaries, with the same arithmetic limits.
+Matrix diagnostics distinguish recovery, denominator policy and arithmetic
 limits. Native IPM remains the default. See
 [the help](ado/dea_crosseff.sthlp) and [installation](INSTALL_CROSSEFF.txt).
 
@@ -206,7 +208,7 @@ iteration limit is distinguished from convergence. Aggressive/benevolent
 strategies retain the documented weighted-output surrogates. Their scores are
 not guaranteed to bracket Nash scores. See help for averaging and fallback rules.
 
-`dea_crosseff` 1.10.0 keeps native IPM as the default. Explicit
+`dea_crosseff` 1.10.1 keeps native IPM as the default. Explicit
 `engine(simplex)` obtains the numerical primary formulation, then uses
 original quantities for bounded exact primary/secondary certificates. The
 secondary face uses positive exact primary dual constraints; a rounded

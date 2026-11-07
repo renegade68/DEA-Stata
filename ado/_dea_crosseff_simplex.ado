@@ -1,4 +1,4 @@
-*! version 1.3.0 07nov2026
+*! version 1.3.1 08nov2026
 *! Cross-efficiency simplex, original-data optimal faces and recovery diagnostics.
 version 16.0
 capture mata: mata drop _c57_simplex_ready()
@@ -11,7 +11,7 @@ capture mata: mata drop _c57_lzratio()
 capture mata: mata drop _c57_rank()
 mata:
 mata set matastrict on
-real scalar _c57_simplex_ready() return(8401)
+real scalar _c57_simplex_ready() return(8402)
 // Split each free variable into two nonnegative columns, then check the
 // reconstructed solution against the submitted, unsplit constraints.
 // Diagnostics: accepted-status, solver-status, objective, iterations,

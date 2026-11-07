@@ -11,6 +11,7 @@ python3 -m pip install -r tests/requirements.txt
 python3 -B tests/run.py --list
 python3 -B tests/run.py --suite smoke
 python3 -B tests/run.py --suite crosseff_raw
+python3 -B tests/run.py --suite crosseff_decoder
 python3 -B tests/check_publication.py
 ```
 
@@ -36,6 +37,11 @@ it contains suite names and pass/fail status, not local paths, commands or logs.
 Raw console files, Stata logs, generated do-files and per-suite manifests can
 contain local paths and should remain local unless reviewed and redacted.
 See PUBLICATION.txt for the publication audit and commit-metadata checks.
+
+The decoder suite verifies exact finite binary64 decomposition, the unchanged
+default coefficient domain, and invalid-input/arithmetic-budget boundaries.
+The raw suite preserves fixed legacy selections and independently certified
+references for the additional recoveries in version1.10.1.
 
 The detailed suite-specific commands below remain available for advanced use.
 They assume DEA_STATA (and, if needed, DEA_RSCRIPT) is already set and a new
