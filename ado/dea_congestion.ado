@@ -1,5 +1,8 @@
-*! version 2.0.0  26apr2026
-*! dea_congestion.ado — Congestion DEA (Cooper et al. 2004)
+*! version 2.3.0 06nov2026
+*! Return delegated failure counts and documented summary aliases.
+*! 2026-11-01: use shared Form A/B parser; preserve if/in expressions.
+*! 2026-11-01: preflight output names; explicit replacevars; protect model data.
+*! dea_congestion.ado — Explicit Cooper decomposition / legacy radial diagnostic
 *!   Wrapper: delegates to dea model(congestion)
 *!
 *! AUTHORS:
@@ -25,7 +28,9 @@
  * CONGESTION DEA
  * ==============
  *
- * Detects input congestion using the Cooper et al. (2004) two-step procedure.
+ * congmethod(cooper) selects the new hybrid VRS worker; see the help equations.
+ * The default retains the historical equality-restricted radial ratio. This is not the
+ * Cooper slack decomposition and does not identify congestion by itself.
  * Congestion occurs when reducing an input can actually increase output
  * (perverse input-output relationship).
  *
@@ -35,8 +40,8 @@
  *           equality constraints) → θ_C
  *
  *   Congestion measure = θ_VRS / θ_C
- *     < 1 : congestion present (θ_C > θ_VRS)
- *     = 1 : no congestion
+ *     < 1 : equality restriction gap (θ_C > θ_VRS)
+ *     = 1 : no radial gap; does not rule out nonradial congestion
  *
  *   Scale efficiency = θ_CRS / θ_VRS
  *
@@ -60,38 +65,21 @@ program define dea_congestion, rclass
     //   Form A: dea_congestion x1 x2 = y1 y2, [options]
     //   Form B: dea_congestion [if] [in], inputs(x1 x2) outputs(y1 y2) [opts]
     // =========================================================================
-    local raw0 `"`0'"'
-    if strpos(`"`raw0'"', "=") > 0 {
-        local _io_inputs ""
-        gettoken _w 0 : 0, parse("=,")
-        while "`_w'" != "=" & "`_w'" != "" {
-            if "`_w'" == "," {
-                di as error "Syntax error: comma before '='"
-                error 198
-            }
-            local _io_inputs `_io_inputs' `_w'
-            gettoken _w 0 : 0, parse("=,")
-        }
-        local _cpos = strpos(`"`0'"', ",")
-        if `_cpos' > 0 {
-            local _io_outputs = trim(substr(`"`0'"', 1, `_cpos' - 1))
-            local _post = substr(`"`0'"', `_cpos' + 1, .)
-            local 0 `", inputs(`_io_inputs') outputs(`_io_outputs') `_post'"'
-        }
-        else {
-            local _io_outputs = trim(`"`0'"')
-            local 0 `", inputs(`_io_inputs') outputs(`_io_outputs')"'
-        }
-    }
+    _dea_parse_io `0'
+    local 0 `"`r(args)'"'
 
     syntax [if] [in], ///
         Inputs(varlist numeric) ///
         Outputs(varlist numeric) ///
         [ ///
         Generate(name) ///
+        REPLACEVARS    ///
         dmu(varname) ///
         engine(string) ///
         TOLerance(real 1e-7) ///
+        CONGMethod(string) CONGWeight(string) CONGMATrix CONGRanges ///
+        CONGPolicy(string) CONGAnchor(string) CONGREFerence(string) CONGSelectlimit(string) ///
+        SAVing(string) REPLACE DEBUG ///
         ]
 
     // Defaults
@@ -101,6 +89,19 @@ program define dea_congestion, rclass
     // Build options for dea
     local dmu_opt ""
     if "`dmu'" != "" local dmu_opt "dmu(`dmu')"
+
+    if lower("`congmethod'")=="cooper" {
+        dea `inputs' = `outputs' `if' `in', model(congestion) ///
+            congmethod(cooper) congweight(`congweight') `congmatrix' `congranges' ///
+            congpolicy(`congpolicy') conganchor(`conganchor') congreference(`congreference') congselectlimit(`congselectlimit') ///
+            generate(`generate') engine(`engine') tolerance(`tolerance') ///
+            `dmu_opt' `replacevars' saving(`saving') `replace' `debug'
+        return add
+        return local cmd "dea_congestion"
+        exit
+    }
+
+    if "`congpolicy'`conganchor'`congreference'`congselectlimit'"!="" exit 198
 
     // Mark sample
     marksample touse
@@ -118,8 +119,14 @@ program define dea_congestion, rclass
     // =========================================================================
     dea `inputs' = `outputs' if `touse', ///
         model(congestion) generate(`generate') ///
-        engine(`engine') tolerance(`tolerance') `dmu_opt'
+        engine(`engine') tolerance(`tolerance') `dmu_opt' `replacevars' ///
+        congmethod(`congmethod') congweight(`congweight') `congmatrix' `congranges' ///
+        saving(`saving') `replace' `debug'
 
-    // Return results
+    // Preserve the documented aliases after the core's rclass work.
+    local _N_eff = r(N_eff)
+    local _mean_eff = r(mean_eff)
     return add
+    return scalar n_efficient = `_N_eff'
+    return scalar mean_efficiency = `_mean_eff'
 end

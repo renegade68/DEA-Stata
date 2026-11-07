@@ -1,4 +1,7 @@
-*! version 1.0.1  02may2026
+*! version 1.1.0  03nov2026
+*! 2026-11-01: accept the minimum option abbreviations advertised in help.
+*! 2026-11-01: use shared Form A/B parser; preserve if/in expressions.
+*! 2026-11-01: preflight output names; explicit replacevars; protect model data.
 *! dea_sbmundesirable.ado — SBM with Undesirable Outputs (Tone, 2004)
 *!   Wrapper: delegates to dea model(sbmundesirable)
 *!
@@ -44,8 +47,8 @@
  *   min  (1 - (1/m)*Σ(s⁻ᵢ/xᵢ₀)) / (1 + (1/(s+b))*(Σ(s⁺ᵣ/yᵣ₀) + Σ(sᵇₖ/bₖ₀)))
  *   s.t. Xλ + s⁻ = x₀      (input slack)
  *        Yλ - s⁺ = y₀      (good output slack, ≥ constraint)
- *        Bλ + sᵇ = b₀      (bad output equality, weak disposability)
- *        Σλ = 1 (VRS)  or unconstrained (CRS)
+ *        Bλ + sᵇ = b₀      (separable bad-output reduction slack)
+ *        Σλ = 1 (VRS), <=1 (NIRS/DRS), >=1 (NDRS/IRS), or unrestricted (CRS)
  *        λ, s⁻, s⁺, sᵇ ≥ 0
  *
  * Solved via Charnes-Cooper linearization.
@@ -64,29 +67,8 @@ program define dea_sbmundesirable, rclass
     //   Form B: dea_sbmundesirable [if] [in], inputs(x1 x2) outputs(y1 y2)
     //             bad(b1) [options]
     // =========================================================================
-    local raw0 `"`0'"'
-    if strpos(`"`raw0'"', "=") > 0 {
-        local _io_inputs ""
-        gettoken _w 0 : 0, parse("=,")
-        while "`_w'" != "=" & "`_w'" != "" {
-            if "`_w'" == "," {
-                di as error "Syntax error: comma before '='"
-                error 198
-            }
-            local _io_inputs `_io_inputs' `_w'
-            gettoken _w 0 : 0, parse("=,")
-        }
-        local _cpos = strpos(`"`0'"', ",")
-        if `_cpos' > 0 {
-            local _io_outputs = trim(substr(`"`0'"', 1, `_cpos' - 1))
-            local _post = substr(`"`0'"', `_cpos' + 1, .)
-            local 0 `", inputs(`_io_inputs') outputs(`_io_outputs') `_post'"'
-        }
-        else {
-            local _io_outputs = trim(`"`0'"')
-            local 0 `", inputs(`_io_inputs') outputs(`_io_outputs')"'
-        }
-    }
+    _dea_parse_io `0'
+    local 0 `"`r(args)'"'
 
     syntax [if] [in], ///
         Inputs(varlist numeric) ///
@@ -94,8 +76,9 @@ program define dea_sbmundesirable, rclass
         BAD(varlist numeric) ///
         [ ///
         Generate(name) ///
+        REPLACEVARS    ///
         dmu(varname) ///
-        rts(string) ///
+        Rts(string) ///
         TOLerance(real 1e-7) ///
         ]
 
@@ -124,7 +107,7 @@ program define dea_sbmundesirable, rclass
     dea `inputs' = `outputs' if `touse', ///
         model(sbmundesirable) bad(`bad') ///
         rts(`rts') generate(`generate') ///
-        tolerance(`tolerance') `dmu_opt'
+        tolerance(`tolerance') `dmu_opt' `replacevars'
 
     local _N        = r(N)
     local _N_eff    = r(N_eff)

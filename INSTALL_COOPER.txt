@@ -1,0 +1,149 @@
+Cooper matched-package installation and verification (06 Nov 2026)
+
+Copy the entire ado/ directory, not only dea.ado. The matched package has 79
+runtime/help/do files. New Cooper files include the shared _dea_cooper_weights,
+context/data/exact worker and certificate/repair/face/result support modules.
+The package uses local-folder installation, not net install.
+
+Use a fresh Stata 16+ session, or save your data then clear all. Hot replacement
+of arbitrary private Mata structs is not an ABI guarantee. Put this package
+first on adopath and confirm all helpers resolve from that one folder:
+    adopath ++ "/absolute/path/to/DEA-Stata/ado"
+    which dea
+    findfile _dea_cooper_weights.ado
+    findfile _dea_cooper_data.ado
+    findfile _dea_cooper_cert.ado
+    findfile _dea_congestion_exact.ado
+    findfile dea_congestion.sthlp
+
+Version labels: dea 2.0.73, wrapper 2.3.0, Cooper helpers 1.0.0, common simplex 2.0.25.
+Mata data/weight readiness is 5401; simplex readiness 16 and adapter readiness 9
+remain unchanged. Readiness numbers are compatibility codes, not pivot limits.
+Keep a complete previous package for rollback. These checks do not publish.
+The simplex path returns r(integration_status)="integrated". Per-DMU
+availability still uses certificate_status and the generated status variable.
+
+Run the following self-contained example in an empty session.
+COOPER_INSTALL_EXAMPLE_BEGIN
+clear
+input double id x y
+1 1 1
+2 2 4
+3 4 2
+end
+dea x=y, model(congestion) congmethod(cooper) engine(ipm) congweight(normalized) dmu(id) gen(native) congmatrix
+tempname A M
+matrix `A'=r(lambda_stage1)
+matrix `M'=r(lambda_stage2)
+dea x=y, model(congestion) congmethod(cooper) engine(simplex) congweight(normalized) conganchor(`A') congpolicy(stage2) congreference(`M') dmu(id) gen(cert) congranges
+assert r(n_failed)==0
+assert r(n_range_complete)==3
+assert "`r(actual_engine)'"=="simplex"
+assert "`r(integration_status)'"=="integrated"
+matrix list r(certificate_status)
+assert colsof(r(certificate_status))==18
+assert cert_status==0
+COOPER_INSTALL_EXAMPLE_END
+
+The complete Cooper procedure still requires stage(2). congpolicy(stage1) is
+the default selection policy, not the public stage(1) procedure. References
+must be named N*N matrices matching the selected sample/order. Engine(auto)
+is rejected for Cooper. No implicit native reference prepass is used.
+
+For simplex, 2*N+inputs+outputs+3<=64 is required. The default 16 / explicit 128 limit controls
+the optional stage2 selector only. Main-stage exact repair retains 16; neither
+limit is the numerical iteration cap. Certificates concern
+internal normalized-binary64 LP points. Numeric exports round once after
+unit multiplication. Read usable/selection/conversion status together.
+IPM keeps its own numerical availability rules and supports larger samples.
+Both engines reject unrepresentable positive objective scaling before
+overwriting outputs. `replacevars` and `saving(...),replace` remain explicit.
+
+Regression commands (new output directories; NumPy/SciPy and licensed Stata):
+    python tests/test_cooper_certified.py --stata /path/to/stata-mp --output /new/output
+    python tests/test_cooper_congestion.py --stata /path/to/stata-mp --output /new/output
+The latter independently verifies rational primal/dual endpoint certificates
+for the simplex path; numerical SciPy ranges do not authorize exact endpoints.
+The native path retains the independent numerical model and fault checks.
+An optional --rscript path enables additional numerical R comparisons.
+
+Matched runtime/help/do inventory (79 files):
+    _dea_bootstrap_core.ado
+    _dea_congestion_cooper.ado
+    _dea_congestion_exact.ado
+    _dea_cooper.ado
+    _dea_cooper_cert.ado
+    _dea_cooper_context.ado
+    _dea_cooper_data.ado
+    _dea_cooper_linktest.ado
+    _dea_cooper_live.ado
+    _dea_cooper_live_core.ado
+    _dea_cooper_repair.ado
+    _dea_cooper_result.ado
+    _dea_cooper_stage2.ado
+    _dea_cooper_weights.ado
+    _dea_crosseff_cerange.ado
+    _dea_crosseff_cert.ado
+    _dea_crosseff_context.ado
+    _dea_crosseff_diagnostics.ado
+    _dea_crosseff_exactobjective.ado
+    _dea_crosseff_objective.ado
+    _dea_crosseff_optima.ado
+    _dea_crosseff_raw.ado
+    _dea_crosseff_simplex.ado
+    _dea_games.ado
+    _dea_ipm.ado
+    _dea_lpcheck.ado
+    _dea_lpcontract.ado
+    _dea_lpcontract_impl.do
+    _dea_native_retry.ado
+    _dea_nonte_lp.ado
+    _dea_output_check.ado
+    _dea_panel_check.ado
+    _dea_parse_io.ado
+    _dea_recovery.ado
+    _dea_simplex.ado
+    _dea_sw2007_seq.ado
+    _dea_teaudit.ado
+    _dea_tecontract.ado
+    _dea_tecontract_impl.do
+    _dea_twostage.ado
+    _dea_weak.ado
+    _dea_weak_bound.ado
+    _dea_weakddf.ado
+    dea.ado
+    dea.sthlp
+    dea_bootstrap.ado
+    dea_bootstrap.sthlp
+    dea_congestion.ado
+    dea_congestion.sthlp
+    dea_cooperative.ado
+    dea_cooperative.sthlp
+    dea_crosseff.ado
+    dea_crosseff.sthlp
+    dea_crossgame.ado
+    dea_crossgame.sthlp
+    dea_fuzzy.ado
+    dea_fuzzy.sthlp
+    dea_game.sthlp
+    dea_lp.ado
+    dea_lp.sthlp
+    dea_malmquist.ado
+    dea_malmquist.sthlp
+    dea_nash.ado
+    dea_nash.sthlp
+    dea_network.ado
+    dea_network.sthlp
+    dea_sbmundesirable.ado
+    dea_sbmundesirable.sthlp
+    dea_stackelberg.ado
+    dea_stackelberg.sthlp
+    dea_sw2007.ado
+    dea_sw2007.sthlp
+    dea_window.ado
+    dea_window.sthlp
+    lp.ado
+    lp.sthlp
+    milp_bb.ado
+    milp_bb.sthlp
+    milp_bb_impl.do

@@ -1,0 +1,23 @@
+Explicit CE-range verification (schema7701)
+
+python tests/test_crosseff_cerange.py --stata /path/to/stata-mp --output /new/output
+Optional comparison: --baseline-ado /path/to/prior/ado
+Requires licensed Stata16+, Python, NumPy/SciPy. No R or research directory is
+required. Frozen fixtures include data and independent T75 Fraction references
+with source SHA256; inherited T76 internal proofs were verified separately.
+
+12selected configurations x2native engines:1404requested cells,1388finite-face
+cells and16unavailable F2 cells. Cases overlap; they are not independent datasets.
+Exact range/denominator/cutoff states and binary64 endpoint exports must match.
+Finite attained, finite limit-only and unbounded endpoints are distinguished.
+Counts are recomputed from detail rows. Stored-weight links/stage status must
+match optimadiag, and18legacy/optima numeric snapshots per call remain byte
+identical. This suite includes variable and fixed CE under multiple weights.
+Both native engine choices use the same exact diagnostic engine; agreement
+does not independently validate native IPM or guarantee universal availability.
+
+Limits, syntax/if-in/quietly/matrix/replacevars, cached helper reload, missing or
+stale helpers, injected failures, data/estimation/RNG/context preservation and
+complete independent installation also require separate integration checks.
+Mean/rank ranges, selection policy, acceleration and full regression are not
+established by this portable suite. Failed numerical solves are not retried.

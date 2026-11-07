@@ -1,6 +1,10 @@
 {smcl}
+{* Help revision 2026-11-02: correct pivot endpoint description and finite-sample limits.}{...}
+{* Help revision 2026-11-01: shared bootstrap worker and empirical inverse-CDF CI quantiles.}{...}
+{* Help revision 2026-11-01: if/in defines both evaluation and reference samples.}{...}
+{* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 3.0.1  21jul2026}{...}
+{* *! version 3.0.5  01nov2026}{...}
 {viewerjumpto "Related article" "dea_bootstrap##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_crosseff" "help dea_crosseff"}{...}
@@ -45,6 +49,14 @@ Form B (extended syntax)
 [{it:options}]
 
 
+{pstd}
+{cmd:if} and {cmd:in} restrict both the DMUs evaluated and the reference
+set. Observations with missing input or output values are excluded. Unrelated
+variables do not affect sample selection. Generated results are missing outside
+the selected sample. An empty estimation sample returns {cmd:r(2000)}.
+When {cmd:replacevars} is used, it replaces entire result columns, including
+setting observations outside the selected sample to missing.{p_end}
+
 {synoptset 28 tabbed}{...}
 {synopthdr}
 {synoptline}
@@ -64,6 +76,7 @@ Form B (extended syntax)
 
 {syntab:Output}
 {synopt:{cmdab:gen:erate(}{it:newvar}{cmd:)}}name for original efficiency variable; default is {cmd:_bs_eff}{p_end}
+{synopt:{cmd:replacevars}}explicitly replace existing result variables; model data and identifiers remain protected{p_end}
 {synopt:{cmd:dmu(}{it:varname}{cmd:)}}DMU identifier variable (string or numeric){p_end}
 {synopt:{cmd:detail}}display DMU-level bootstrap details{p_end}
 
@@ -74,7 +87,7 @@ Form B (extended syntax)
 {p2colreset}{...}
 
 {p 4 6 2}
-{it:rtstype}: {cmd:crs} (constant returns to scale) | {cmd:vrs} (variable returns to scale){p_end}
+{it:rtstype}: {cmd:crs} | {cmd:vrs} | {cmd:drs} (nonincreasing) | {cmd:irs} (nondecreasing){p_end}
 {p 4 6 2}
 {it:type}: {cmd:input} | {cmd:output}{p_end}
 
@@ -96,11 +109,24 @@ Bias-corrected scores, bootstrap standard errors, and confidence intervals are
 reported for each DMU.
 
 {pstd}
+The same bootstrap calculation routines are used by {cmd:dea, bootstrap}.
+Pivot intervals use empirical inverse-CDF quantiles (nearest rank, rounded up
+at both endpoints). Corrections and endpoints are not clipped to [0,1].
+
+{pstd}
 Internally, {cmd:dea_bootstrap} solves the DEA linear programs with the
 package-supplied Two-Phase Revised Simplex solver in {cmd:_dea_simplex.ado}.
 The command does not expose an {cmd:engine()} option; this keeps the bootstrap
 replication path fixed and reproducible.
 
+
+{pstd}
+Variance correction is applied to the mirrored score distribution before
+reflection at 1. Earlier versions rescaled already-reflected draws toward their
+mean, artificially excluding a neighborhood of 1. This has been corrected;
+previous bias corrections, standard errors, and intervals should be recomputed.
+Finite-sample coverage remains dependent on the data-generating process and
+sample size, rather than being guaranteed by numerical LP agreement.
 
 {marker options}{...}
 {title:Options}
@@ -170,11 +196,35 @@ density estimation of the original efficiency scores. The method requires
 supported.
 
 {pstd}
-Note that the confidence intervals produced by {cmd:dea_bootstrap} are
-bias-corrected confidence intervals. The original efficiency score serves as the
-lower bound when using input orientation (scores ≤ 1), since the bootstrap
-distribution reflects sampling variation around the true frontier.
+Let t be the original efficiency score and q(p) the empirical inverse-CDF
+quantile of its bootstrap scores. For a two-sided interval with tail probability
+a, the returned pivot interval is [2t-q(1-a), 2t-q(a)]. The original score is
+not imposed as either endpoint. Neither the corrected score nor the interval
+is clipped to (0,1]. This applies to both orientations, which use the same
+efficiency scale.
 
+{pstd}
+The common smoothed score distribution assumes that it is appropriate to
+resample efficiencies independently across DMUs. It does not model efficiency
+distributions that vary with input/output location or dependence within clusters.
+More bootstrap replications reduce simulation noise; they do not remove
+misspecification or the difficulty of estimating a multidimensional frontier
+from a small sample. Bias correction can increase RMSE, especially for a DMU
+that lies on the estimated frontier in most samples. A nominal {cmd:level(95)}
+does not guarantee 95% coverage in finite samples.
+
+
+{pstd}
+{bf:Protecting existing data.} All output names are checked before results are
+created. An existing result variable causes an error unless {cmd:replacevars}
+is specified. The option applies only to variables produced by the current
+command; it does not remove other variables sharing the prefix. Replacement
+recreates whole result columns, including their storage types and labels;
+observations not scored by the command do not retain old scores. Variables
+used as model data or identifiers cannot be replaced, even with
+{cmd:replacevars}. Invalid or duplicate output names are rejected before any
+existing result column is changed. This name check does not promise rollback
+of later computation or file-write errors.
 
 {marker examples}{...}
 {title:Examples}
@@ -207,9 +257,9 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 
 {phang2}{cmd:. dea_bootstrap capital labor = output, reps(500) seed(12345)}{p_end}
 
-{pstd}VRS with higher confidence level
+{pstd}VRS with a 90% confidence level
 
-{phang2}{cmd:. dea_bootstrap capital labor = output, rts(vrs) level(90) reps(1000)}{p_end}
+{phang2}{cmd:. dea_bootstrap capital labor = output, rts(vrs) level(90) reps(1000) replacevars}{p_end}
 
 {pstd}String DMU identifiers, save results
 
@@ -217,6 +267,18 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 {phang2}{cmd:. list firm bs bs_bc bs_se bs_lo bs_hi}{p_end}
 
 
+
+{pstd}Restrict both evaluation and reference DMUs{p_end}
+{phang2}{cmd:. dea_bootstrap if labor>=10 in 2/6, inputs(capital labor) outputs(output) dmu(firm) reps(100) seed(12345) gen(sub)}{p_end}
+{phang2}{cmd:. assert r(n)==4}{p_end}
+{phang2}{cmd:. assert missing(sub) if labor<10 | _n<2 | _n>6}{p_end}
+
+
+{pstd}Documented minimum option abbreviations
+
+{phang2}{cmd:. dea_bootstrap, inputs(capital labor) outputs(output) dmu(firm) reps(50) seed(711) rts(vrs) orientation(output) generate(fullopt)}{p_end}
+{phang2}{cmd:. dea_bootstrap, in(capital labor) out(output) dmu(firm) reps(50) seed(711) r(vrs) or(output) gen(shortopt)}{p_end}
+{phang2}{cmd:. assert fullopt==shortopt}{p_end}
 
 {phang2}{cmd:. restore}{p_end}
 {* DEAS_HELP_EXAMPLES_END}{...}

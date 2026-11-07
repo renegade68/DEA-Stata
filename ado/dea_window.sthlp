@@ -1,6 +1,9 @@
 {smcl}
+{* Help revision 2026-11-02: validated window LPs and explicit failure statistics.}{...}
+{* Help revision 2026-11-01: validate selected DMU-period keys before output replacement.}{...}
+{* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 1.3.0  02may2026}{...}
+{* *! version 1.3.8  02nov2026}{...}
 {viewerjumpto "Related article" "dea_window##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_bootstrap" "help dea_bootstrap"}{...}
@@ -30,7 +33,7 @@ Form A (legacy syntax)
 {cmd:dea_window}
 {it:inputvars} {cmd:=} {it:outputvars}
 {ifin}{cmd:,}
-{cmdab:dmu(}{it:varname}{cmd:)}
+[{cmdab:dmu(}{it:varname}{cmd:)}]
 {cmdab:time(}{it:varname}{cmd:)}
 [{it:options}]
 
@@ -41,30 +44,44 @@ Form B (extended syntax)
 {p 8 16 2}
 {cmd:dea_window}
 {ifin}{cmd:,}
-{cmdab:dmu(}{it:varname}{cmd:)}
+[{cmdab:dmu(}{it:varname}{cmd:)}]
 {cmdab:time(}{it:varname}{cmd:)}
 {cmdab:in:puts(}{it:varlist}{cmd:)}
 {cmdab:out:puts(}{it:varlist}{cmd:)}
 [{it:options}]
 
 
+{pstd}
+Both forms support {cmd:if} and {cmd:in}. Equality tests such as
+{cmd:if group==1}, quoted strings, and functions such as
+{cmd:if inlist(group,1,2)} are parsed as sample restrictions.
+The restrictions apply to both evaluated observations and the reference data.
+Input and output varlists may use standard variable ranges and wildcards.
+
+{pstd}
+For compatibility, output variables may also precede {cmd:if}/{cmd:in}, with
+{cmd:inputs()} after the comma. If that positional varlist is omitted,
+{cmd:outputs()} is required; unrelated variables are not inferred as outputs.
+Input and output variables must be numeric; {cmd:dmu()} may be a string.
+
 {synoptset 28 tabbed}{...}
 {synopthdr}
 {synoptline}
 {syntab:Required}
-{synopt:{cmd:dmu(}{it:varname}{cmd:)}}DMU identifier variable (string or numeric){p_end}
 {synopt:{cmd:time(}{it:varname}{cmd:)}}time period variable (numeric){p_end}
 {synopt:{cmdab:in:puts(}{it:varlist}{cmd:)}}input variable(s){p_end}
 {synopt:{cmdab:out:puts(}{it:varlist}{cmd:)}}output variable(s){p_end}
 
 {syntab:Model}
+{synopt:{cmd:dmu(}{it:varname}{cmd:)}}optional stable DMU identifier (string or numeric); see remarks for positional IDs{p_end}
 {synopt:{cmdab:r:ts(}{it:rtstype}{cmd:)}}returns to scale; default is {cmd:rts(crs)}{p_end}
 {synopt:{cmdab:or:ientation(}{it:type}{cmd:)}}orientation; default is {cmd:orientation(input)}{p_end}
 {synopt:{cmd:ort(}{it:type}{cmd:)}}synonym for {cmd:orientation()}{p_end}
-{synopt:{cmd:width(}{it:#}{cmd:)}}window width in periods; default is {cmd:width(3)}{p_end}
+{synopt:{cmd:width(}{it:#}{cmd:)}}window width in observed periods; default is min(3,T){p_end}
 
 {syntab:Output}
 {synopt:{cmdab:gen:erate(}{it:prefix}{cmd:)}}prefix for saved window-efficiency variables; default is {cmd:_win}{p_end}
+{synopt:{cmd:replacevars}}explicitly replace existing result variables; model data and identifiers remain protected{p_end}
 {synopt:{cmd:detail}}accepted for compatibility; window-by-window results are displayed by default{p_end}
 
 {syntab:Technical}
@@ -90,7 +107,8 @@ reference technology ({help dea_window##CCGSS1985:Charnes et al. 1985}).
 
 {pstd}
 For a panel with T periods and window width w, the number of windows is T - w + 1.
-DMU j in period t is evaluated against all observations in the window [t, t+w-1].
+Each DMU-period is evaluated against all selected observations in every window
+containing that period.
 Because each DMU appears multiple times across windows, efficiency may vary,
 providing information about the stability of efficiency over time.
 
@@ -111,13 +129,14 @@ the stability of relative efficiency over time.
 {dlgtab:Required}
 
 {phang}
-{cmd:dmu(}{it:varname}{cmd:)} specifies the variable identifying each DMU.
-Accepts both string and numeric variables.
-
-{phang}
 {cmd:time(}{it:varname}{cmd:)} specifies the numeric variable for time periods.
 
 {dlgtab:Model}
+
+{phang}
+{cmd:dmu(}{it:varname}{cmd:)} optionally specifies a stable identifier for each
+DMU, using a string or numeric variable. If omitted, selected within-period
+positions are used; see {help dea_window##remarks:Remarks} for the identity assumption.
 
 {phang}
 {cmdab:r:ts(}{it:rtstype}{cmd:)} specifies the returns-to-scale assumption.
@@ -131,7 +150,17 @@ Default is {cmd:orientation(input)}.
 {phang}
 {cmd:width(}{it:#}{cmd:)} specifies the window width — the number of consecutive
 periods included in each window. Must be at least 2 and at most T (the total
-number of periods). Default is {cmd:width(3)}.
+number of periods). Omitting the option or specifying 0 selects min(3,T).
+
+{phang}
+{cmd:tolerance(}{it:#}{cmd:)} must be positive and finite. From version 1.3.8,
+the native Stata {cmd:LinearProgram()} path applies the requested tolerance to
+normalized constraint/bound checks and uses min(tolerance,1e-8) for convergence.
+A converged candidate rejected by the primal checks receives at most one
+stricter solve of the same LP. Columns are rescaled without changing the model.
+Unavailable or rejected scores remain missing. Tolerance does not bound the
+error in an efficiency score or certify exact optimality. Earlier versions
+ignored this option during optimization and accepted invalid values.
 
 {dlgtab:Output}
 
@@ -147,6 +176,57 @@ saves {it:prefix}{cmd:_mean} and {it:prefix}{cmd:_sd}. Default is {cmd:_win}.
 {title:Remarks}
 
 {pstd}
+The effective analysis sample must contain at most one observation for each
+DMU-period key. Repeated keys return {cmd:r(459)} before result variables are
+created or replaced, even when the repeated observations have identical
+inputs/outputs and even with {cmd:replacevars}. Resolve repeated keys using
+a substantively appropriate rule before estimation; the command does not
+choose one row or aggregate observations automatically.
+
+{pstd}
+The check applies after {cmd:if}/{cmd:in} restrictions and exclusion of missing
+inputs, outputs, time values, or DMU identifiers. Repeated keys outside this
+sample do not cause rejection. Nonmissing string identifiers are compared
+exactly, including whitespace; numeric keys retain their stored precision.
+Unbalanced panels and gaps between numeric time values remain supported.
+Consecutive periods refer to the ordered observed periods, not necessarily
+consecutive calendar dates. {cmd:time()} must be numeric.
+
+{pstd}
+Quantities must be nonnegative, with a positive input and a positive output
+in every selected DMU-period. Individual zero components are allowed.
+Validation precedes output replacement. Every selected observation is included
+in each applicable window's reference set; unavailable scores can therefore
+reflect numerical failure even though self-evaluation provides a feasible point.
+
+{pstd}
+An observation's generated mean and SD summarize its available scores across
+windows. A single available score has row SD 0; no available score leaves both
+summaries missing. The displayed DMU summary pools all available period-window
+scores for that DMU. Overall returns pool all available scores, so observations
+contained in more overlapping windows contribute more often. These are not
+equal-weight averages of the per-observation means. SD uses the sample divisor;
+the overall SD is missing with fewer than two available scores.
+
+{pstd}
+Supply a stable {cmd:dmu()} identifier for panel analysis. If omitted, the
+command numbers selected observations 1, 2, ... within each period, preserving
+the incoming row order. Selection applies {cmd:if}/{cmd:in} and excludes missing
+input, output, and time values before numbering. Excluded rows do not consume
+an ID. The original row order is restored before computation.
+
+{pstd}
+Positional IDs assume that the same selected position represents the same
+real DMU across periods. They do not infer identity: changing within-period
+order or removing different DMUs across periods can change the matches. Use
+an explicit stable {cmd:dmu()} for such panels. Artificial sequential IDs
+cannot detect repeated observations of a real DMU. A note is displayed when
+{cmd:dmu()} is omitted, and {cmd:r(dmu_method)} records the method used.
+Recompute earlier results obtained without {cmd:dmu()}; earlier versions
+counted excluded rows and did not fix within-period order.
+
+
+{pstd}
 The data must be in long format with one observation per DMU per period. DMUs
 need not be balanced across all periods; missing observations within a window
 are handled automatically.
@@ -157,6 +237,18 @@ as a way to analyze panel data without requiring parametric assumptions about
 the production technology over time. Standard DEA background is provided in
 {help dea_window##CST2007:Cooper, Seiford, and Tone (2007)}.
 
+
+{pstd}
+{bf:Protecting existing data.} All output names are checked before results are
+created. An existing result variable causes an error unless {cmd:replacevars}
+is specified. The option applies only to variables produced by the current
+command; it does not remove other variables sharing the prefix. Replacement
+recreates whole result columns, including their storage types and labels;
+observations not scored by the command do not retain old scores. Variables
+used as model data or identifiers cannot be replaced, even with
+{cmd:replacevars}. Invalid or duplicate output names are rejected before any
+existing result column is changed. This name check does not promise rollback
+of later computation or file-write errors.
 
 {marker examples}{...}
 {title:Examples}
@@ -203,11 +295,11 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 
 {pstd}Window width 2 with VRS
 
-{phang2}{cmd:. dea_window expenditure teachers = graduation, dmu(country) time(year) width(2) rts(vrs)}{p_end}
+{phang2}{cmd:. dea_window expenditure teachers = graduation, dmu(country) time(year) width(2) rts(vrs) replacevars}{p_end}
 
 {pstd}Output-oriented window analysis
 
-{phang2}{cmd:. dea_window expenditure teachers = graduation, dmu(country) time(year) width(2) orientation(output)}{p_end}
+{phang2}{cmd:. dea_window expenditure teachers = graduation, dmu(country) time(year) width(2) orientation(output) replacevars}{p_end}
 
 {pstd}Save window scores with a custom prefix
 
@@ -215,6 +307,40 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 {phang2}{cmd:. list country year win_w1_p1 win_w1_p2 win_w2_p1 win_w2_p2 win_mean win_sd}{p_end}
 
 
+
+{pstd}Equivalent sample restrictions in both syntax forms
+
+{phang2}{cmd:. dea_window expenditure teachers = graduation if country!="Aland" in 1/l, dmu(country) time(year) width(2) generate(qa)}{p_end}
+{phang2}{cmd:. dea_window if country!="Aland" in 1/l, inputs(expenditure teachers) outputs(graduation) dmu(country) time(year) width(2) generate(qb)}{p_end}
+{phang2}{cmd:. assert qa_mean==qb_mean}{p_end}
+
+
+{pstd}Documented minimum option abbreviations
+
+{phang2}{cmd:. dea_window, inputs(expenditure teachers) outputs(graduation) dmu(country) time(year) width(2) rts(vrs) orientation(output) generate(fullopt)}{p_end}
+{phang2}{cmd:. dea_window, in(expenditure teachers) out(graduation) dmu(country) time(year) width(2) r(vrs) or(output) gen(shortopt)}{p_end}
+{phang2}{cmd:. assert fullopt_mean==shortopt_mean}{p_end}
+
+{pstd}Detect repeated panel keys before estimation
+
+{phang2}{cmd:. tempfile unique_panel}{p_end}
+{phang2}{cmd:. save `unique_panel'}{p_end}
+{phang2}{cmd:. expand 2 if _n==1}{p_end}
+{phang2}{cmd:. capture noisily dea_window expenditure teachers = graduation, dmu(country) time(year) gen(keycheck)}{p_end}
+{phang2}{cmd:. assert _rc==459}{p_end}
+{phang2}{cmd:. use `unique_panel', clear}{p_end}
+
+{pstd}Selected positional IDs with consistently ordered DMUs
+
+{phang2}{cmd:. tempfile positional_panel}{p_end}
+{phang2}{cmd:. save `positional_panel'}{p_end}
+{phang2}{cmd:. expand 2 if _n==1, generate(extra)}{p_end}
+{phang2}{cmd:. sort year country extra}{p_end}
+{phang2}{cmd:. dea_window expenditure teachers = graduation if extra==0, time(year) dmu(country) generate(idref)}{p_end}
+{phang2}{cmd:. dea_window expenditure teachers = graduation if extra==0, time(year) generate(idpos)}{p_end}
+{phang2}{cmd:. assert "`r(dmu_method)'"=="position"}{p_end}
+{phang2}{cmd:. assert idref_mean==idpos_mean}{p_end}
+{phang2}{cmd:. use `positional_panel', clear}{p_end}
 
 {phang2}{cmd:. restore}{p_end}
 {* DEAS_HELP_EXAMPLES_END}{...}
@@ -234,9 +360,20 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 {synopt:{cmd:r(mean_eff)}}mean window efficiency across reported scores{p_end}
 {synopt:{cmd:r(sd_eff)}}standard deviation of window efficiency scores{p_end}
 {synopt:{cmd:r(n_obs)}}number of window efficiency scores summarized{p_end}
+{synopt:{cmd:r(n_attempted)}}number of observed DMU-period-window evaluations{p_end}
+{synopt:{cmd:r(n_failed)}}attempted evaluations with unavailable scores{p_end}
+{synopt:{cmd:r(n_failed_obs)}}selected observations with no available window score{p_end}
+{synopt:{cmd:r(tolerance)}}requested feasibility tolerance{p_end}
 {syntab:Macros}
+{synopt:{cmd:r(dmu_method)}}{cmd:variable} when {cmd:dmu()} is supplied; otherwise {cmd:position}{p_end}
 {synopt:{cmd:r(rts)}}returns to scale used{p_end}
 {synopt:{cmd:r(orientation)}}orientation used{p_end}
+
+{pstd}
+{cmd:r(n_attempted)} = {cmd:r(n_obs)} + {cmd:r(n_failed)}. Structural blank
+cells outside an observation's windows or for absent DMU-period combinations
+are not failures. All-missing runs return zero successful scores, missing
+overall mean/SD, and explicit failure counts.
 {p2colreset}{...}
 
 

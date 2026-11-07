@@ -4,6 +4,7 @@
 Requires Python 3, git, and a licensed Stata 16+ batch executable. All generated
 packages, datasets and logs go into a new --output directory, never ado/.
 """
+from _support import package_files, require_git_history
 import argparse
 import hashlib
 import json
@@ -60,8 +61,8 @@ def instrument(source, dest):
 
 def checks(inputs='x1 x2', outputs='y1 y2', orientation='input', rts='crs'):
     """Check primal feasibility independently of the storage implementation."""
-    inequality = ('L*X :- X:*E' if orientation == 'input' else 'L*X :- X')
-    out = ('Y :- L*Y' if orientation == 'input' else 'Y:/E :- L*Y')
+    inequality = ('L*X :- Xe:*E' if orientation == 'input' else 'L*X :- Xe')
+    out = ('Ye :- L*Y' if orientation == 'input' else 'Ye:/E :- L*Y')
     convexity = {
         'crs': '', 'vrs': 'assert(max(abs(rowsum(L):-1))<1e-6)',
         'nirs': 'assert(max(rowsum(L):-1)<1e-6)',
@@ -72,7 +73,15 @@ local refs "`r(refvars)'"
 local failures=r(n_failed)
 local average=r(mean_eff)
 matrix L=r(lambda)
-assert `failures'==0
+local check_ipm=("`r(engine)'"=="ipm" & "`r(model)'"=="te")
+local check_stage2=(`check_ipm' & r(stage)==2)
+if `check_stage2' {{
+ matrix ST=r(stage_status)
+ assert r(n_radial_failed)==0
+ assert `failures'==r(n_stage2_failed)
+ mata: assert(strtoreal(st_local("failures"))==sum(st_matrix("ST")[.,2]:!=0))
+}}
+else assert `failures'==0
 assert !missing(eff)
 quietly summarize eff, meanonly
 assert abs(r(mean)-`average')<1e-9
@@ -81,12 +90,28 @@ L=st_matrix("L")
 X=st_data(.,tokens("{inputs}"))
 Y=st_data(.,tokens("{outputs}"))
 E=st_data(.,"eff")
+assert(all(st_data(.,tokens(st_local("refs"))):==L))
+Xe=X; Ye=Y
+if (strtoreal(st_local("check_stage2"))) {{
+ status=st_matrix("ST")[.,2]
+ for (k=1;k<=rows(L);k++) {{
+  if (status[k]!=0) assert(all(L[k,.]:>=.))
+ }}
+ good=selectindex(status:==0)
+ L=L[good,.]; Xe=X[good,.]; Ye=Y[good,.]; E=E[good,.]
+}}
+else if (strtoreal(st_local("check_ipm"))) {{
+ // A checked dual score can be available without primal reference weights.
+ good=selectindex(rowmissing(L):==0)
+ for (k=1;k<=rows(L);k++) assert(rowmissing(L[k,.])==0 | rowmissing(L[k,.])==cols(L))
+ L=L[good,.]; Xe=X[good,.]; Ye=Y[good,.]; E=E[good,.]
+}}
+assert(rows(L)>0)
 assert(sum(L:>=.)==0)
 assert(min(L)>-1e-7)
 assert(max({inequality})<1e-5)
 assert(max({out})<1e-5)
 {convexity}
-assert(max(abs(st_data(.,tokens(st_local("refs")))-L))<1e-12)
 end
 foreach v of local refs {{
     assert "`:type `v''"=="double"
@@ -100,11 +125,16 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--baseline-ref', help='Optional pre-fix git commit for old-defect reproduction and numerical comparisons')
     args = parser.parse_args()
+    if args.baseline_ref:
+        try:
+            require_git_history(REPO, args.baseline_ref)
+        except ValueError as error:
+            parser.error(str(error))
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     package = out / 'current_ado'
     package.mkdir()
-    tracked = subprocess.check_output(['git', '-C', str(REPO), 'ls-files', 'ado/'], text=True).splitlines()
+    tracked = package_files(REPO)
     hashes = {}
     for name in tracked:
         data = (REPO/name).read_bytes()
@@ -116,7 +146,8 @@ def main():
     if args.baseline_ref:
         baseline = out / 'baseline_ado'
         baseline.mkdir()
-        for name in tracked:
+        baseline_names = subprocess.check_output(['git', '-C', str(REPO), 'ls-tree', '-r', '--name-only', args.baseline_ref, 'ado/'], text=True).splitlines()
+        for name in baseline_names:
             data = subprocess.check_output(['git', '-C', str(REPO), 'show', args.baseline_ref+':'+name])
             (baseline/Path(name).name).write_bytes(data)
         instrument(baseline, out/'baseline_forced_retry_ado')
@@ -169,11 +200,12 @@ rename eff base_eff
 save "control.dta", replace
 ''', baseline)
                         setup = f'use "{control}/control.dta", clear\n'
-                        compare = '''
-assert abs(eff-base_eff)<1e-10
-mata: assert(max(abs(st_matrix("L")-st_data(.,"base_lambda":+strofreal(1..st_nobs()))))<1e-10)
-'''
-                    run(name, setup+f'dea x1 x2 = y1 y2, {opts} saveref saving("final.dta")\n'+
+                        compare = 'assert abs(eff-base_eff)<1e-10\n'
+                        if not ((engine == 'simplex' and stage == 1) or (engine == 'ipm' and stage == 2)):
+                            compare += 'mata: assert(max(abs(st_matrix("L")-st_data(.,"base_lambda":+strofreal(1..st_nobs()))))<1e-10)\n'
+                        # F12 intentionally changes stage-1 simplex references;
+                        # checks() independently verifies their primal feasibility.
+                    run(name, setup+f'dea x1 x2 = y1 y2, {opts} saveref saving("final.dta") replacevars\n'+
                         checks(orientation=orientation, rts=rts)+compare+'''
 preserve
 use "final.dta", clear
@@ -182,7 +214,7 @@ capture ds __*
 assert _rc==111
 capture ds base_*
 assert _rc==111
-mata: assert(max(abs(st_matrix("L")-st_data(.,tokens(st_local("refs")))))<1e-12)
+mata: assert(all(st_matrix("L"):==st_data(.,tokens(st_local("refs")))))
 restore
 ''')
 
@@ -202,33 +234,39 @@ restore
                     run(f'retry_{rts}_{orientation}_ref{int(ref)}_replace{int(replace)}', BASIC+f'''
 dea x = y, {opts} engine(ipm) generate(control)
 matrix C=r(lambda)
+matrix CSI=r(slack_in)
+matrix CSO=r(slack_out)
 local mean0=r(mean_eff)
 local min0=r(min_eff)
 local max0=r(max_eff)
 local count0=r(N_eff)
+local failed0=r(n_failed)
+matrix CST=r(stage_status)
 '''+prep+f'''
-dea x = y, {opts} engine(auto) generate(eff) {'saveref' if ref else ''} saving("final.dta") {'replace' if replace else ''}
+dea x = y, {opts} engine(auto) generate(eff) {'saveref' if ref else ''} saving("final.dta") {'replace' if replace else ''} replacevars
 local refs "`r(refvars)'"
 matrix L=r(lambda)
 assert "`r(engine)'"=="ipm"
-assert r(n_failed)==0
+assert r(n_failed)==`failed0'
+matrix ST=r(stage_status)
+mata: assert(all(st_matrix("ST"):==st_matrix("CST")))
 assert abs(r(mean_eff)-`mean0')<1e-10
 assert abs(r(min_eff)-`min0')<1e-10
 assert abs(r(max_eff)-`max0')<1e-10
 assert r(N_eff)==`count0'
 assert abs(eff-control)<1e-10
-mata: assert(max(abs(st_matrix("L")-st_matrix("C")))<1e-10)
-capture matrix list r(slack_in)
-assert _rc==111
-capture matrix list r(slack_out)
-assert _rc==111
+mata: assert(all(st_matrix("L"):==st_matrix("C")))
+matrix SI=r(slack_in)
+matrix SO=r(slack_out)
+mata: assert(all(st_matrix("SI"):==st_matrix("CSI")))
+mata: assert(all(st_matrix("SO"):==st_matrix("CSO")))
 use "final.dta", clear
 assert !missing(eff)
 capture ds __*
 assert _rc==111
 capture confirm variable sentinel
 assert _rc==111
-'''+('''mata: assert(max(abs(st_matrix("L")-st_data(.,tokens(st_local("refs")))))<1e-12)
+'''+('''mata: assert(all(st_matrix("L"):==st_data(.,tokens(st_local("refs")))))
 ''' if ref else '''capture ds _ref_*
 assert _rc==111
 '''), forced)
@@ -374,7 +412,7 @@ restore
     run('multiplier_retry', BASIC+'''
 dea x = y, dmu(id) model(multiplier) rts(vrs) engine(ipm) generate(control) saveweights
 matrix C=r(multiplier_u0)
-dea x = y, dmu(id) model(multiplier) rts(vrs) engine(auto) generate(eff) saveweights saving("final.dta")
+dea x = y, dmu(id) model(multiplier) rts(vrs) engine(auto) generate(eff) saveweights saving("final.dta") replacevars
 matrix U=r(multiplier_u0)
 assert "`r(engine)'"=="ipm"
 assert r(n_failed)==0
@@ -463,7 +501,7 @@ matrix L=r(lambda)
 assert r(auto_preemptive_ipm)==1
 assert "`r(engine)'"=="ipm"
 assert !missing(eff)
-mata: assert(max(abs(st_matrix("L")-st_data(.,tokens(st_local("refs")))))<1e-12)
+mata: assert(all(st_matrix("L"):==st_data(.,tokens(st_local("refs")))))
 ''')
     if baseline:
         run('old_defect_missing_reference', BASIC+'''

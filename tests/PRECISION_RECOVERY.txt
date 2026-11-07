@@ -1,0 +1,140 @@
+Failure-only precision recovery: arithmetic argument, validation and limits
+2026-11-04; simplex2.0.22 implementation in ado/_dea_simplex.ado
+
+Scope
+This certifies enclosure of the screen's arithmetic within a deliberately restricted
+binary64 domain, under round-to-nearest evaluation of the written elementary
+operations. It is not a theorem that the screen proves exact LP optimality. Its
+nonzero tolerance, finite empirical tests, scaling and feasible-point checks remain
+separate issues. Public x is binary64; dual y is the sum of two stored binary64 values.
+No directed hardware rounding or external arbitrary-precision runtime is required.
+
+1. Error-free transforms
+TwoSum(a,b) returns s,e with s+e=a+b exactly in real arithmetic. TwoProduct uses
+Dekker splitting (2^27+1) and the parenthesized product remainder. We use the standard
+identities described in Ogita/Rump/Oishi (2005), Algorithms 3.1–3.3 and Theorem 3.4.
+https://www.tuhh.de/ti3/paper/rump/OgRuOi05.pdf
+The code does not assume a fused multiply-add. Reassociation/fast-math would require
+revalidation. The reference is used for these primitive identities, not as proof
+that our complete LP policy is the same algorithm as the paper's Dot2Err.
+
+Every nonzero product operand is restricted to [2^-400,2^400] in magnitude. Products
+are bounded by 2^800, splitter intermediates by approximately 2^428; the smallest
+possible nonzero product of significand pieces is at least 2^-904. These are normal
+binary64 numbers. Zero products are exact and do not need reciprocal range shifts.
+A dot is limited to 4096 terms and its initial D to the same operand envelope.
+All sum-transform intermediates stay far below overflow and on a dyadic lattice no
+finer than 2^-904. Out-of-envelope operations return missing (uncertain), never pass.
+The existing simplex arithmetic and refinement solver are not redefined by this range.
+
+2. Outward scalar operations
+For a+b, TwoSum identifies the direction of rounding. If its remainder is zero or
+already points inside the requested bound, the stored sum is the desired bound.
+Otherwise add/subtract abs(s)*2^-52 in the required direction. For normal s this
+increment is between one and two ulps of its binade, and nearest rounding moves by
+at least one adjacent representable value. It therefore covers the remainder of a
+nearest-rounded elementary operation. Boundary binades can only make the bound
+more conservative. Negative s is handled using abs(s), with the requested sign.
+The same construction applies to the high product using its exact product remainder.
+No bump is applied when the elementary result is already exact.
+
+The generic outward addition additionally rejects nonzero input magnitudes below
+2^-970, inputs above 2^900, and nonzero results below 2^-970. The bump therefore
+remains normal (at least 2^-1022); large intermediates cannot overflow. This is a
+range guard, not a relaxation or rescaling of the user's tolerance. Constants are
+exact binary64 literals, not Mata's approximate exponentiation.
+
+3. Dot enclosure
+Maintain h,l and nonnegative radius R for the partial exact value. For one product
+p+e=a_i*b_i, perform these exact two-term transforms:
+  s,s0 = TwoSum(h,-p)
+  t,t0 = TwoSum(l,-e)
+  u,u0 = TwoSum(s0,t)
+  v,v0 = TwoSum(s,u)
+The updated exact partial value equals v+v0+t0+u0 plus the prior unknown error.
+Retain h=v,l=v0 and increase R by |t0|+|u0| using outward positive additions.
+At completion TwoSum(h,l) gives center and a final remainder; add its magnitude to R.
+Induction gives |(D-sum a_i*b_i)-center| <= R. The algorithm bounds actual discarded
+remainders instead of using an arbitrary global multiplier on tolerance.
+
+4. Propagation through the quality screen
+Bound each original equality residual and each reduced cost using the dot enclosure.
+For a value center +/- R, outward_add(|center|,R) bounds its absolute value, and
+outward_add(center,-R,lower) is a lower bound. Consequently:
+ - |y_h|+|y_l| is rounded upward;
+ - the weighted primal sum uses upper absolute residuals, upward positive products,
+   and upward sums;
+ - the complementarity sum similarly bounds |x_j|*|reduced_cost_j|;
+ - the dual violation is max(0,-lower_reduced_cost);
+ - the gap is bounded directly from the combined c'x-y_h'b-y_l'b expression,
+   avoiding cancellation of two separately rounded objective values.
+Primal feasibility and nonnegative x remain independently checked by _dea_lpcheck.
+
+5. Acceptance without a rounded denominator
+Let O=(o,r) enclose c'x. Then |c'x| >= max(0,|o|-r).
+Let N be an upper bound of one of the three nonnegative quality numerators.
+If |o|>=r, evaluate and bound N-cutoff-cutoff*|o|+cutoff*r as a combined dot.
+Otherwise evaluate N-cutoff. Accept this item only if its computed upper bound <=0.
+This suffices for N <= cutoff*(1+|c'x|), while preserving the expression's low parts.
+The diagnostic denlo and displayed normalized metrics are not used as a rounded
+acceptance gate. This distinction resolves the three conservative false rejections
+of the first prototype, which rounded the denominator downward too early.
+The dual item similarly bounds violation-price*min(1,max|c|) as one expression.
+Here cutoff=min(1e-8,tol), price=min(existing_opt_tol,tol), exactly as in T7.
+Missing enclosures reject. The final acceptance also requires the unchanged primal
+filter, valid basis, finite refined components and finite objective.
+
+6. Packaged validation and cautions
+Run test_precision_arithmetic.py with --stata and --output (a new directory).
+It checks600 exact products,800 outward additions,108 dots up to4096 terms,
+9 malformed/range controls,68 range-edge controls,420 quality cases,104 refinement
+systems,21 cutoff neighbors,10 normal/error helper controls and4 unavailable
+extreme scalar examples. The21 and420 boundary sets overlap and are not441
+independent cases. The same input doubles are evaluated independently by Fraction.
+
+Run test_precision_recovery.py with the same arguments and a separate new directory.
+The hexadecimal fixture covers396 known-optimum LPs (180 square,216 with extra
+columns or inactive inequalities). Exact primal/dual witnesses prove the optimum,
+and279 formerly missing cases must return the exact point (114 original,153
+transition, one certified-price and11 blocked-pivot reconstruction recoveries).
+All396 conditions require availability. Other accepted cases
+must satisfy their original primal tolerance and an independent objective benchmark.
+One preexisting success is recorded separately: objective13510798723147367/2251799813685248
+versus6, relative error1.0084892984199963e-8. This precise known observation is allowed
+and reported; an improved value passing the benchmark is also allowed. New or larger
+objective deviations fail the test. It is not counted as an accurate recovery.
+
+Existing successful outputs are preserved. Whether to verify/refine all successful
+results, or offer an optional diagnostic, is a separate policy question. Current
+user tolerance is not a promise of relative objective error for every accepted LP.
+The finite test sets and restricted arithmetic argument do not prove universal LP
+optimality, recovery, portability or performance. Infeasible VRS super-efficiency,
+artificial purge/rank, native IPM limitations and deferred inference work are separate.
+All data and Python helpers needed by these tests are included in this package;
+NumPy/SciPy and licensed Stata16+ are required. No private research paths or downloads.
+
+Transition and scaling extension (2026-11-03)
+The failure-only exchange now checks small positive directions and validates a
+trial basis before committing it. At an otherwise blocked phase transition,
+up to two real-column basis proposals preserve all original rows. Column
+selection keeps the small QR path and uses thin Householder work beyond128
+columns. The separate n+2m<=4096 quality bound remains; this is not unlimited
+problem-size support. Tests/WIDE_SCALING.txt describes exact row scaling and
+large-column controls. This extension does not change accepted-success quality
+policy or repair the recorded e015 objective boundary.
+
+Certified-pricing extension (2026-11-04)
+The previously unresolved extended_k30_extra4_p1_combined_1e-12 condition now
+requires exact recovery. This raises the fixture's required exact count from267
+to268 and required availability from384 to385, without changing its stored LP
+coefficients or witnesses. See PRECISION_PRICING.txt for price-error bounds,
+repeat handling, preservation of restart priority and the separate controls.
+The preexisting accepted objective-boundary observation remains unchanged.
+
+Failure-tail reconstruction extension (2026-11-04)
+The11 previously unresolved conditions now require exact recovery without
+changing their coefficients, tolerances or witnesses. This raises required
+availability385→396 and required exact recovery268→279. New retries occur only
+after rejection of all earlier paths and an observed blocked Phase-1 pivot.
+They retain original rows and the final original-unit quality screen. See
+RECONSTRUCTION.txt for additional exact variants, failed cases and work accounting.

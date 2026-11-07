@@ -1,5 +1,37 @@
-*! version 2.0.29  01nov2026
-*! Persist reference weights, finalize saving after retries, and protect automatic DMU IDs
+*! version 2.0.73 06nov2026
+*! Check successful simplex bases; retain certified results and refine verified defects.
+*! Validate ordinary TE quantities before replacing results or saving.
+*! Optional recoverylog: LP context, model/final availability and command lifecycle.
+*! R11-F: specialized model domains, SBM-bad RTS, scaled equality index and explicit conventions.
+*! Correct SBM zero terms and scaling; connect super-SBM orientation and validate data.
+*! Validate allocative price dimensions and orientation before changing results.
+*! Correct interval IDEA self references in both pessimistic and optimistic LPs.
+*! Forward the requested tolerance to every legacy bounded/ordinal DEA call.
+*! Forward non-TE tolerance and validate original LP constraints before returning results.
+*! Return TE numerical diagnostics and preserve small positive radial scores.
+*! Preserve specialized-model failures and count unavailable components.
+*! Uniform TE stage status, solution provenance, and save-only diagnostics.
+*! Return TE slack columns with the expanded input/output variable names and order.
+*! Display DMU labels as data, including quotes, macro characters, and literal SMCL.
+*! Explicit radialtolerance() recovery preserves scores and reports projection targets.
+*! 2026-11-01: connect bounded native retries and per-DMU evidence to TE/VRS.
+*! 2026-11-01: validate primal residuals, deliver TE tolerance, and correct output dual recovery.
+*! 2026-11-01: return IPM stage-2 projections and separate radial/projection status.
+*! 2026-11-01: move dea_lp compatibility entry point to its standalone file.
+*! 2026-11-01: require a positive, finite effective tolerance before sample or output changes.
+*! 2026-11-01: keep reference display values local; preserve user scalars and matrices.
+*! 2026-11-01: exclude missing bad/direction values; preflight numeric IDEA endpoints.
+*! 2026-11-01: pass stage to simplex; use radial-only auxiliary VRS fits.
+*! 2026-11-01: connect numeric bounds plus legacy options to the shared DMU-wise transformation.
+*! 2026-11-01: freeze ordinal comparison values before transforming each DMU dataset.
+*! 2026-11-01: restore bounded string inputs/outputs in both syntaxes; preflight endpoints.
+*! 2026-11-01: unify IDEA activation; validate option combinations and ordinal variable roles.
+*! 2026-11-01: align FDH/IDEA statistics, effective model, saved results and documentation.
+*! 2026-11-01: preserve observation rows in VRS tables; return source-row mapping.
+*! 2026-11-01: fix undesirable DDF expansion; validate its sample and observed directions.
+*! 2026-11-01: classify and rank stored scores by model; separate strict super-efficiency.
+*! 2026-11-01: share radial bootstrap LPs, publish SE/CI, connect environmental bootstrap to sequential SW2007.
+*! Validate all output names; explicit replacevars; preserve model data and automatic IDs
 *! DEA: Data Envelopment Analysis
 *! Requires: Stata 16.0 or later
 *! Program: dea — an update
@@ -273,29 +305,47 @@
 
 program define dea, rclass
     version 16.0
+    local _c53_hint ""
+    local _c53_guard 0
+    capture mata: assert(_c53_context_ready()==53)
+    if _rc {
+        capture findfile _dea_cooper_context.ado
+        if !_rc quietly run "`r(fn)'"
+    }
+    capture mata: assert(_c53_context_ready()==53)
+    if !_rc {
+        tempname entry_snapshot
+        mata: `entry_snapshot'=_c53_context_save()
+        local _c53_guard 1
+    }
+    capture mata: _dea_rec_abort()
+    capture noisily _dea_run public `0'
+    local rc=_rc
+    if `rc' {
+        capture mata: _dea_rec_abort()
+        if `_c53_guard' {
+            if "`_c53_hint'"=="1" mata: _c53_context_restore(`entry_snapshot')
+            mata: mata drop `entry_snapshot'
+        }
+        return clear
+        exit `rc'
+    }
+    if "`r(recovery_scope)'"=="package_simplex_calls" capture mata: _dea_rec_close()
+    if `_c53_guard' {
+        if "`_c53_hint'"=="1" mata: _c53_context_restore(`entry_snapshot')
+        mata: mata drop `entry_snapshot'
+    }
+    return add
+end
+
+program define _dea_run, rclass
+    version 16.0
+    // Private entry context is not part of the public command syntax.
+    gettoken _dea_call_context 0 : 0
 
     // =========================================================================
     // 1.0 Load IPM engine Mata functions (if Stata 16+ and not already loaded)
     // =========================================================================
-    if `c(stata_version)' >= 16 {
-        // Check core function AND undesirable model function (added in v2.0)
-        local _ipm_needs_load 0
-        capture mata: mata which _dea_ipm_envelopment()
-        if _rc != 0 local _ipm_needs_load 1
-        capture mata: mata which _dea_ipm_ddf_undesirable()
-        if _rc != 0 local _ipm_needs_load 1
-        if `_ipm_needs_load' {
-            capture findfile _dea_ipm.ado
-            if _rc == 0 {
-                qui run "`r(fn)'"
-            }
-            else {
-                di as error "_dea_ipm.ado not found. Please install it in your ado path."
-                exit 601
-            }
-        }
-    }
-
     // =========================================================================
     // 1.1 Preserve original command line (syntax consumes `0')
     // =========================================================================
@@ -322,11 +372,16 @@ program define dea, rclass
     local has_equal = (`_eqpos' > 0 & `_eqpos' < `_boundary')
 
     if `has_equal' {
-        _dea_parse_equal `raw0'
+        capture noisily _dea_parse_equal `raw0'
+        local _c53_parse_rc=_rc
     }
     else {
-        _dea_parse_standard `raw0'
+        capture noisily _dea_parse_standard `raw0'
+        local _c53_parse_rc=_rc
     }
+
+    c_local _c53_hint "`_c53_hint'"
+    if `_c53_parse_rc' exit `_c53_parse_rc'
 
     // At this point, the following locals are set by the parser:
     //   inputs, outputs, dmu, rts, orientation, model, stage,
@@ -350,10 +405,13 @@ program define dea, rclass
     local stage     "`r(stage)'"
     local method    "`r(method)'"
     local tolerance "`r(tolerance)'"
+    local radialtolerance = r(radial_tolerance)
     local generate  "`r(generate)'"
     local trace     "`r(trace)'"
+    local recoverylog "`r(recoverylog)'"
     local saving    "`r(saving)'"
     local replace   "`r(replace)'"
+    local replacevars "`r(replacevars)'"
     local debug     "`r(debug)'"
     local contractcheck "`r(contractcheck)'"
     local fdh       "`r(fdh)'"
@@ -367,6 +425,8 @@ program define dea, rclass
     local ddfbeta   "`r(ddfbeta)'"
     local bad       "`r(bad)'"
     local direction "`r(direction)'"
+    local disposability "`r(disposability)'"
+    local weakmatrix "`r(weakmatrix)'"
     local xlo       "`r(xlo)'"
     local xhi       "`r(xhi)'"
     local ylo       "`r(ylo)'"
@@ -375,6 +435,10 @@ program define dea, rclass
     local yord      "`r(yord)'"
     local bounded   "`r(bounded)'"
     local ordinal   "`r(ordinal)'"
+    local _idea_method "`r(idea_method)'"
+    local _idea_numeric "`r(idea_numeric)'"
+    local _idea_lowers "`r(idea_lowers)'"
+    local _idea_uppers "`r(idea_uppers)'"
     local bootstrap "`r(bootstrap)'"
     local envars    "`r(envars)'"
     local reps1     "`r(reps1)'"
@@ -387,6 +451,14 @@ program define dea, rclass
     local auto_fallback "`r(auto_fallback)'"
     local ifcond    "`r(ifcond)'"
     local incond    "`r(incond)'"
+    local congmethod "`r(congmethod)'"
+    local congweight "`r(congweight)'"
+    local congmatrix "`r(congmatrix)'"
+    local congranges "`r(congranges)'"
+    local congpolicy "`r(congpolicy)'"
+    local conganchor "`r(conganchor)'"
+    local congreference "`r(congreference)'"
+    local congselectlimit "`r(congselectlimit)'"
     local user_set_ort = r(user_set_ort)
     if "`user_set_ort'" == "" | "`user_set_ort'" == "." local user_set_ort 0
     // sbm_ort: 0=non-oriented, 1=input-oriented, 2=output-oriented
@@ -397,18 +469,249 @@ program define dea, rclass
         if "`orientation'" == "output" local sbm_ort_num 2
     }
 
+    if !("`model'"=="congestion" & "`congmethod'"=="cooper" & "`engine'"=="simplex") {
+    if `c(stata_version)' >= 16 {
+        // Check core function AND undesirable model function (added in v2.0)
+        local _ipm_needs_load 0
+        capture mata: assert(_dea_ipm_audit_ready()==4)
+        if _rc != 0 local _ipm_needs_load 1
+        capture mata: assert(findexternal("_dea_ipm_envelopment()")!=NULL)
+        if _rc != 0 local _ipm_needs_load 1
+        capture mata: assert(findexternal("_dea_ipm_ddf_undesirable()")!=NULL)
+        if _rc != 0 local _ipm_needs_load 1
+        if `_ipm_needs_load' {
+            capture findfile _dea_ipm.ado
+            if _rc == 0 {
+                qui run "`r(fn)'"
+            }
+            else {
+                di as error "_dea_ipm.ado not found. Please install it in your ado path."
+                exit 601
+            }
+        }
+    }
+
+    }
+
+    if "`recoverylog'"!="" {
+        if !(inlist("`model'","te","sbm","supersbm") | ("`model'"=="undesirable" & "`disposability'"=="weak")) | ///
+           "`fdh'`_idea_method'`bootstrap'`contractcheck'`bounded'`ordinal'`xlo'`xhi'`ylo'`yhi'`xord'`yord'"!="" {
+            di as error "recoverylog supports ordinary TE, SBM, super-SBM and joint weak-disposal DDF; not bootstrap, IDEA, FDH or contractcheck"
+            exit 198
+        }
+        capture mata: assert(_dea_recovery_ready()==1)
+        if _rc {
+            quietly findfile _dea_recovery.ado
+            quietly run "`r(fn)'"
+        }
+        mata: _dea_rec_begin(`c(matsize)')
+    }
+
+    if "`model'"=="congestion" & "`congmethod'"=="cooper" {
+        local _dmuopt ""
+        if "`dmu'"!="" local _dmuopt "dmu(`dmu')"
+        _dea_congestion_cooper `ifcond' `incond', inputs(`inputs') outputs(`outputs') ///
+            generate(`generate') tolerance(`tolerance') engine(`engine') ///
+            congweight(`congweight') `congmatrix' `congranges' `_dmuopt' ///
+            congpolicy(`congpolicy') conganchor(`conganchor') congreference(`congreference') congselectlimit(`congselectlimit') ///
+            saving(`saving') `replace' `replacevars' `debug'
+        return add
+        return local cmd "dea"
+        exit
+    }
+
+    if "`model'"=="undesirable" & "`disposability'"=="weak" {
+        local _dmuopt ""
+        if "`dmu'"!="" local _dmuopt "dmu(`dmu')"
+        local _requested_engine "`engine'"
+        if "`auto_fallback'"!="" local _requested_engine "auto"
+        _dea_weakddf `ifcond' `incond', inputs(`inputs') outputs(`outputs') bad(`bad') ///
+            generate(`generate') tolerance(`tolerance') engine(`_requested_engine') ///
+            direction(`direction') rts(`rts') `weakmatrix' `_dmuopt' ///
+            saving(`saving') `replace' `replacevars' `debug'
+        if "`recoverylog'"!="" {
+        tempname _rec_log _rec_stats
+        mata: _dea_rec_export("`_rec_log'","`_rec_stats'")
+        if `_rec_stats'[1,8]>0 return matrix recovery_log=`_rec_log'
+        return matrix recovery_stats=`_rec_stats'
+        return local recovery_scope "package_simplex_calls"
+        }
+        return add
+        return local cmd "dea"
+        return local cmdline `"`cmdline'"'
+        exit
+    }
+
     // =========================================================================
     // 1.3 Build estimation sample (must be done in main program)
     // =========================================================================
     tempvar touse
     mark `touse' `ifcond' `incond'
-    local _markout_vars `inputs' `outputs'
+    // Resolve the endpoints actually used by both numeric IDEA paths. Keep
+    // the legacy transformation plan and its public return macro unchanged.
+    local _bound_vars `_idea_numeric'
+    local _bound_lowers `_idea_lowers'
+    local _bound_uppers `_idea_uppers'
+    local _interval_points ""
+    if "`_idea_method'" == "interval" {
+        foreach _side in x y {
+            local _dims `inputs'
+            if "`_side'" == "y" local _dims `outputs'
+            local _lo_option "`_side'lo"
+            local _hi_option "`_side'hi"
+            if "``_lo_option''``_hi_option''" == "" {
+                local _interval_points `_interval_points' `_dims'
+            }
+            else {
+                local _n : word count `_dims'
+                forvalues _j = 1/`_n' {
+                    local _v : word `_j' of `_dims'
+                    local _lo : word `_j' of ``_lo_option''
+                    local _hi : word `_j' of ``_hi_option''
+                    if "`_lo'" == "" local _lo "`_v'"
+                    if "`_hi'" == "" local _hi "`_v'"
+                    local _bound_vars `_bound_vars' `_v'
+                    local _bound_lowers `_bound_lowers' `_lo'
+                    local _bound_uppers `_bound_uppers' `_hi'
+                }
+            }
+        }
+    }
+    local _markout_vars `inputs' `outputs' `envars'
     if "`w'" != "" local _markout_vars `_markout_vars' `w'
     if "`p'" != "" local _markout_vars `_markout_vars' `p'
+    if inlist("`model'", "undesirable", "sbmundesirable") local _markout_vars `_markout_vars' `bad'
+    if "`model'" == "ddf" local _markout_vars `_markout_vars' `gx' `gy'
     if "`bounded'" != "" {
         local _markout_vars : list _markout_vars - bounded
     }
+    // Validate numeric endpoints instead of dropping unused nominal values.
+    // If a nominal column also has an unbounded model role, it remains required.
+    local _markout_vars : list _markout_vars - _bound_vars
+    local _markout_vars `_markout_vars' `_interval_points'
     markout `touse' `_markout_vars'
+
+    // Validate selected bounded values before creating IDs, replacing results,
+    // or writing files. Ordinary incomplete model rows were marked out above.
+    foreach _bounded_var of local bounded {
+        tempvar _bounded_lo _bounded_hi
+        _dea_bounded_parse `_bounded_var', touse(`touse') ///
+            lower(`_bounded_lo') upper(`_bounded_hi')
+    }
+
+    local _n_numeric : word count `_bound_vars'
+    if `_n_numeric' > 0 {
+        forvalues _j = 1/`_n_numeric' {
+            local _v : word `_j' of `_bound_vars'
+            local _lo : word `_j' of `_bound_lowers'
+            local _hi : word `_j' of `_bound_uppers'
+            quietly count if `touse' & (missing(`_lo', `_hi') | `_lo' > `_hi')
+            if r(N) {
+                di as error "numeric bounds for `_v' must be finite with lower <= upper in every selected observation"
+                exit 459
+            }
+        }
+    }
+
+    // Standard SBM admits nonnegative data under its structural-zero rule.
+    // Super-SBM ratios require strictly positive quantities; do not silently
+    // perturb zeros or drop projected quantities from the super objective.
+    if inlist("`model'", "sbm", "supersbm") & "`_idea_method'"=="" & "`fdh'"=="" {
+        foreach _side in inputs outputs {
+            tempvar _sbm_positive
+            quietly generate byte `_sbm_positive'=0 if `touse'
+            foreach _v of local `_side' {
+                quietly count if `touse' & (`_v'<0 | ("`model'"=="supersbm" & `_v'==0))
+                if r(N) {
+                    if "`model'"=="supersbm" di as error "model(supersbm) requires strictly positive inputs and outputs"
+                    else di as error "model(sbm) requires nonnegative inputs and outputs"
+                    exit 459
+                }
+                quietly replace `_sbm_positive'=1 if `touse' & `_v'>0
+            }
+            quietly count if `touse' & `_sbm_positive'==0
+            if r(N) {
+                di as error "model(sbm) requires a positive input and output in every selected DMU"
+                exit 459
+            }
+        }
+    }
+
+    // Ordinary radial TE uses the complete selected quantity sample. Check
+    // original units before creating IDs/results or writing files. Zero cells
+    // and columns are allowed; every DMU must have a positive value per side.
+    // Flags: 1 negative quantity, 2 all-zero input row, 4 all-zero output row.
+    // min()/rowmax() avoid overflow and do not use a numerical tolerance.
+    // An empty sample leaves the existing r(2000) check in charge below.
+    if "`_dea_call_context'"=="public" & "`model'"=="te" & "`_idea_method'`fdh'"=="" {
+        mata: st_local("_te_domain",strofreal( ///
+            (min(st_data(.,tokens("`inputs' `outputs'"),"`touse'"))<0) + ///
+            2*(min(rowmax(st_data(.,tokens("`inputs'"),"`touse'")))==0) + ///
+            4*(min(rowmax(st_data(.,tokens("`outputs'"),"`touse'")))==0)))
+        if mod(`_te_domain',2) {
+            di as error "model(te) requires nonnegative inputs and outputs in the selected sample"
+            exit 459
+        }
+        if `_te_domain' {
+            di as error "model(te) requires at least one positive input and one positive output in every selected DMU"
+            exit 459
+        }
+    }
+
+    // Specialized models validate their mathematical domains before publication.
+    if "`model'"=="sbmundesirable" & "`_idea_method'"=="" & "`fdh'"=="" {
+        foreach _v of varlist `inputs' `outputs' `bad' {
+            quietly count if `touse' & `_v'<=0
+            if r(N) {
+                di as error "model(sbmundesirable) requires strictly positive inputs, good and bad outputs (slack denominators)"
+                exit 459
+            }
+        }
+    }
+    if "`model'"=="congestion" & "`_idea_method'"=="" & "`fdh'"=="" {
+        foreach _side in inputs outputs {
+            tempvar _positive_cong
+            quietly gen byte `_positive_cong'=0 if `touse'
+            foreach _v of local `_side' {
+                quietly count if `touse' & `_v'<0
+                if r(N) {
+                    di as error "model(congestion) requires nonnegative quantities"
+                    exit 459
+                }
+                quietly replace `_positive_cong'=1 if `touse' & `_v'>0
+            }
+            quietly count if `touse' & `_positive_cong'==0
+            if r(N) {
+                di as error "model(congestion) requires a positive input and output in each selected DMU"
+                exit 459
+            }
+        }
+    }
+
+    // Observed DDF directions must be nonnegative and nonzero for each DMU.
+    // Do this before replacing any user result column or creating automatic IDs.
+    if "`model'" == "undesirable" {
+        foreach _v of varlist `inputs' `outputs' `bad' {
+            quietly count if `touse' & `_v'<0
+            if r(N) {
+                di as error "model(undesirable) requires nonnegative inputs, good outputs, and bad outputs"
+                exit 459
+            }
+        }
+        local _direction_vars `inputs'
+        if "`direction'" == "yb" local _direction_vars `outputs' `bad'
+        if "`direction'" == "xyb" local _direction_vars `inputs' `outputs' `bad'
+        tempvar _nonzero_direction
+        quietly generate byte `_nonzero_direction'=0 if `touse'
+        foreach _v of varlist `_direction_vars' {
+            quietly replace `_nonzero_direction'=1 if `touse' & `_v'>0
+        }
+        quietly count if `touse' & `_nonzero_direction'==0
+        if r(N) {
+            di as error "model(undesirable) requires a nonzero observed direction for every selected DMU"
+            exit 459
+        }
+    }
 
     // Economic models require strictly positive prices.  Ratio profit
     // efficiency additionally requires strictly positive observed profit;
@@ -475,18 +778,78 @@ program define dea, rclass
     local _ref_names ""
     if "`saveref'" != "" {
         if !inlist("`model'", "te", "supereff") | "`fdh'" != "" | ///
-           "`bounded'`ordinal'`xlo'`xhi'`ylo'`yhi'`xord'`yord'" != "" {
+           "`_idea_method'" != "" {
             di as error "saveref requires radial model(te) or model(supereff), without FDH or imprecise-data options"
             exit 198
         }
         mata: _dea_saveref_plan("`dmu'", "`touse'")
         foreach _rv of local _ref_names {
-            confirm new variable `_rv'
             if "`_rv'" == "`generate'" {
                 di as error "generate() conflicts with planned reference variable `_rv'"
                 exit 110
             }
         }
+    }
+
+    // Validate the complete output plan before any result variable is changed.
+    // Keep this plan aligned with the actual dispatch paths (including IDEA).
+    local _planned `generate' `_ref_names'
+    local _projection_vars ""
+    if `radialtolerance'>0 {
+        local _projection_vars _dea_radial _dea_radial2 _dea_radial_adj
+        local _planned `_planned' `_projection_vars'
+    }
+    // The shared normalizer validates and chooses the IDEA path once.
+    local _is_idea = ("`_idea_method'" != "")
+    local _model_effective "`model'"
+    if "`fdh'" != "" local _model_effective "fdh"
+    local _idea_auxvars ""
+    if `_is_idea' {
+        local _model_effective "imprecise"
+        local _idea_auxvars `generate'_opt
+        local _planned `_planned' `generate'_opt
+        if "`_idea_method'" == "legacy" {
+            local _idea_auxvars `_idea_auxvars' `generate'_mid
+            local _planned `_planned' `generate'_mid
+        }
+    }
+    if "`saving'"!="" & "`_model_effective'"=="te" {
+        local _save_columns `dmu' `inputs' `outputs' `generate' `_ref_names'
+        foreach _sv in _dea_radial_status _dea_stage2_status _dea_score_source _dea_ref_stage {
+            local _collision : list _sv in _save_columns
+            if `_collision' {
+                di as error "saving() diagnostic name `_sv' conflicts with a result column"
+                exit 110
+            }
+        }
+    }
+    if "`rts'" == "vrs" & "`_model_effective'" == "te" {
+        local _planned `_planned' CRS_TE VRS_TE SCALE RTS_NUM RTS
+    }
+    if "`model'" == "congestion" & !`_is_idea' & "`fdh'" == "" {
+        local _planned `_planned' `generate'_crs `generate'_vrs ///
+            `generate'_cong_eff `generate'_congestion `generate'_se
+    }
+    if "`model'" == "multiplier" & "`saveweights'" != "" & `stage' == 2 & !`_is_idea' & "`fdh'" == "" {
+        forvalues j = 1/`m_in' {
+            local _planned `_planned' _dea_v`j'
+        }
+        forvalues j = 1/`m_out' {
+            local _planned `_planned' _dea_u`j'
+        }
+        local _planned `_planned' _dea_u0
+    }
+    if "`bootstrap'" != "" {
+        local _planned `_planned' `generate'_bc
+        if "`envars'" == "" local _planned `_planned' `generate'_bias `generate'_se `generate'_lo `generate'_hi
+    }
+    _dea_output_check, names(`_planned') ///
+        protect(`inputs' `outputs' `dmu' `w' `p' `gx' `gy' `bad' ///
+            `xlo' `xhi' `ylo' `yhi' `xord' `yord' `bounded' `ordinal' `envars') ///
+        `replacevars'
+    local _replace_outputs "`r(existing)'"
+    foreach _ov of local _replace_outputs {
+        quietly drop `_ov'
     }
 
     // Under engine(auto), avoid sending a radial DEA problem with strongly
@@ -495,7 +858,7 @@ program define dea, rclass
     local _auto_scale_ratio 1
     local _auto_preemptive_ipm 0
     local _auto_scale_threshold 1e8
-    if "`auto_fallback'" != "" & "`model'" == "te" & "`fdh'" == "" {
+    if "`auto_fallback'" != "" & "`_model_effective'" == "te" {
         local _auto_scale_min .
         local _auto_scale_max 0
         foreach _scale_var of varlist `inputs' `outputs' {
@@ -524,9 +887,17 @@ program define dea, rclass
     // 1.4 Display header
     // =========================================================================
     di as text "{hline `c(linesize)'}"
-    di as text "dea v2.0.29 — Data Envelopment Analysis"
+    di as text "dea v2.0.72 — Data Envelopment Analysis"
+    if "`_model_effective'" == "fdh" local engine_label "FDH dominance comparison"
+    if "`_idea_method'" == "interval" local engine_label "Mata LinearProgram (interval IDEA)"
+    if inlist("`_model_effective'", "undesirable", "congestion", "sbmundesirable") local engine_label "Stata LinearProgram (specialized LP; engine() does not switch this backend)"
     di as text "Engine: `engine_label'"
-    di as text "Specification: model(`model') rts(`rts') orientation(`orientation') stage(`stage')"
+    local _reported_orientation "`orientation'"
+    if inlist("`_model_effective'", "sbm", "supersbm") & `sbm_ort_num'==0 local _reported_orientation "non-oriented"
+    if "`_model_effective'"=="congestion" local _reported_orientation "input"
+    if "`_model_effective'"=="sbmundesirable" local _reported_orientation "non-oriented"
+    if "`_model_effective'"=="undesirable" local _reported_orientation "directional"
+    di as text "Specification: model(`_model_effective') rts(`rts') orientation(`_reported_orientation') stage(`stage')"
     if `_no_option_call' {
         di as text "Defaults applied: model(te) rts(crs) orientation(input) stage(2)" ///
             " engine(simplex) tolerance(1e-7)"
@@ -538,7 +909,7 @@ program define dea, rclass
         di as text "DMUs: `n_dmus', Inputs: `m_in', Outputs: `m_out'"
         di as text "Inputs: `inputs'"
         di as text "Outputs: `outputs'"
-        di as text "Model: `rts' `orientation' (`model')"
+        di as text "Model: `rts' `orientation' (`_model_effective')"
         di as text "Stage: `stage'"
     }
 
@@ -554,16 +925,15 @@ program define dea, rclass
             `trace' `debug' `reference' `saveref'
     }
     // IDEA (Imprecise DEA) — with bounded/ordinal/interval data
-    else if "`bounded'" != "" | "`ordinal'" != "" | ///
-            "`xlo'" != "" | "`xhi'" != "" | "`ylo'" != "" | "`yhi'" != "" | ///
-            "`model'" == "imprecise" {
+    else if `_is_idea' {
         _dea_imprecise_dispatch, inputs(`inputs') outputs(`outputs') ///
             dmu(`dmu') rts(`rts') orientation(`orientation') ///
             stage(`stage') engine(`engine') touse(`touse') ///
             generate(`generate') tolerance(`tolerance') ///
             bounded(`bounded') ordinal(`ordinal') ///
             xlo(`xlo') xhi(`xhi') ylo(`ylo') yhi(`yhi') ///
-            xord(`xord') yord(`yord') ///
+            ideamethod(`_idea_method') ///
+            numvars(`_idea_numeric') lowervars(`_idea_lowers') uppervars(`_idea_uppers') ///
             `trace' `debug'
     }
     // Congestion model (Cooper, Deng, Seiford & Zhu, 2004)
@@ -583,7 +953,7 @@ program define dea, rclass
         _dea_model_dispatch, inputs(`inputs') outputs(`outputs') ///
             dmu(`dmu') rts(`rts') orientation(`orientation') ///
             model(`model') stage(`stage') engine(`engine') ///
-            touse(`touse') generate(`generate') tolerance(`tolerance') ///
+            touse(`touse') generate(`generate') tolerance(`tolerance') radialtolerance(`radialtolerance') ///
             method(`method') ///
             w(`w') p(`p') gx(`gx') gy(`gy') ddfbeta(`ddfbeta') ///
             bad(`bad') direction(`direction') ///
@@ -597,11 +967,50 @@ program define dea, rclass
     // =========================================================================
     // Save r() from _dea_model_dispatch before subsequent calls clear it
     local _r_N_eff    = r(n_efficient)
+    local _r_N_super  = r(n_super)
     local _r_mean_eff = r(mean_efficiency)
     local _r_min_eff  = r(min_eff)
     local _r_max_eff  = r(max_eff)
     local _r_n_failed = r(n_failed)
-    tempname _r_lambda_mat _r_slack_in_mat _r_slack_out_mat _r_vrsfrontier_mat _r_multiplier_u0_mat
+    local _r_n_radial_failed = r(n_radial_failed)
+    local _r_n_stage2_failed = r(n_stage2_failed)
+    if "`_model_effective'"=="congestion" {
+        foreach _cs in n_congested mean_vrs n_failed_primary n_failed_crs n_failed_vrs n_failed_cong n_failed_se {
+            local _r_cong_`_cs' = r(`_cs')
+        }
+    }
+    tempname _r_solution_source_mat
+    local _r_has_solution_source 0
+    capture quietly matrix list r(solution_source)
+    if _rc==0 {
+        matrix `_r_solution_source_mat'=r(solution_source)
+        local _r_has_solution_source 1
+    }
+    tempname _r_stage_status_mat
+    local _r_has_stage_status 0
+    capture quietly matrix list r(stage_status)
+    if _rc == 0 {
+        matrix `_r_stage_status_mat' = r(stage_status)
+        local _r_has_stage_status 1
+    }
+    tempname _r_ipm_trace_mat _r_vrs_ipm_trace_mat
+    local _r_has_ipm_trace 0
+    local _r_has_vrs_ipm_trace 0
+    capture quietly matrix list r(ipm_trace)
+    if _rc == 0 {
+        matrix `_r_ipm_trace_mat' = r(ipm_trace)
+        local _r_has_ipm_trace 1
+    }
+    tempname _r_projection_mat _r_projection_trace_mat _r_numerical_diagnostics_mat _r_stage_linkage_mat
+    foreach _audit in projection projection_trace numerical_diagnostics stage_linkage {
+        local _r_has_`_audit' 0
+        capture quietly matrix list r(`_audit')
+        if _rc==0 {
+            matrix `_r_`_audit'_mat'=r(`_audit')
+            local _r_has_`_audit' 1
+        }
+    }
+    tempname _r_lambda_mat _r_slack_in_mat _r_slack_out_mat _r_vrsfrontier_mat _r_vrsobs_mat _r_multiplier_u0_mat
     local _r_has_lambda   0
     local _r_has_slack_in 0
     local _r_has_slack_out 0
@@ -631,7 +1040,8 @@ program define dea, rclass
     }
 
     if "`auto_fallback'" != "" & "`fdh'" == "" & ///
-       !inlist("`model'", "congestion", "sbmundesirable") {
+       "`_idea_method'" != "interval" & ///
+       !inlist("`_model_effective'", "congestion", "sbmundesirable") {
         qui count if `generate' >= . & `touse'
         local n_failed = r(N)
         if `n_failed' > 0 {
@@ -643,23 +1053,22 @@ program define dea, rclass
             local engine_label "Interior Point Method (auto-fallback)"
             // Reset efficiency variable
             qui replace `generate' = . if `touse'
-            if "`bounded'" != "" | "`ordinal'" != "" | ///
-                    "`xlo'" != "" | "`xhi'" != "" | "`ylo'" != "" | "`yhi'" != "" | ///
-                    "`model'" == "imprecise" {
+            if `_is_idea' {
                 _dea_imprecise_dispatch, inputs(`inputs') outputs(`outputs') ///
                     dmu(`dmu') rts(`rts') orientation(`orientation') ///
                     stage(`stage') engine(`engine') touse(`touse') ///
                     generate(`generate') tolerance(`tolerance') ///
                     bounded(`bounded') ordinal(`ordinal') ///
                     xlo(`xlo') xhi(`xhi') ylo(`ylo') yhi(`yhi') ///
-                    xord(`xord') yord(`yord') ///
+                    ideamethod(`_idea_method') ///
+                    numvars(`_idea_numeric') lowervars(`_idea_lowers') uppervars(`_idea_uppers') ///
                     `trace' `debug'
             }
             else {
                 _dea_model_dispatch, inputs(`inputs') outputs(`outputs') ///
                     dmu(`dmu') rts(`rts') orientation(`orientation') ///
                     model(`model') stage(`stage') engine(`engine') ///
-                    touse(`touse') generate(`generate') tolerance(`tolerance') ///
+                    touse(`touse') generate(`generate') tolerance(`tolerance') radialtolerance(`radialtolerance') ///
                     method(`method') ///
                     w(`w') p(`p') gx(`gx') gy(`gy') ddfbeta(`ddfbeta') ///
                     bad(`bad') direction(`direction') ///
@@ -670,11 +1079,14 @@ program define dea, rclass
             // Refresh snapshots from the engine that actually supplied the final
             // scores. The initial engine's lambda/slack matrices may be stale.
             local _r_N_eff    = r(n_efficient)
+            local _r_N_super  = r(n_super)
             local _r_mean_eff = r(mean_efficiency)
             local _r_min_eff  = r(min_eff)
             local _r_max_eff  = r(max_eff)
             local _r_n_failed = r(n_failed)
-            foreach _what in lambda slack_in slack_out multiplier_u0 {
+            local _r_n_radial_failed = r(n_radial_failed)
+            local _r_n_stage2_failed = r(n_stage2_failed)
+            foreach _what in lambda slack_in slack_out multiplier_u0 stage_status solution_source ipm_trace projection projection_trace numerical_diagnostics stage_linkage {
                 local _r_has_`_what' 0
                 capture quietly matrix list r(`_what')
                 if _rc == 0 {
@@ -688,32 +1100,56 @@ program define dea, rclass
     // =========================================================================
     // 1.5 VRS Frontier analysis (if rts == VRS and model == te)
     // =========================================================================
-    if "`rts'" == "vrs" & "`model'" == "te" & "`fdh'" == "" {
+    if "`rts'" == "vrs" & "`_model_effective'" == "te" {
         // Use the engine that produced the main scores.  With engine(auto),
         // this remains simplex unless the auto-fallback above switched to IPM.
         local _vrs_eng "`engine'"
+        if "`recoverylog'"!="" mata: _dea_rec_scope(2)
         _dea_vrsfrontier, inputs(`inputs') outputs(`outputs') ///
             dmu(`dmu') orientation(`orientation') ///
             engine(`_vrs_eng') touse(`touse') tolerance(`tolerance') ///
             `trace' `debug'
+        if "`recoverylog'"!="" mata: _dea_rec_scope(1)
         // Preserve the internal r-class results before mkmat or bootstrap
         // replaces them in the top-level command.
         matrix `_r_vrsfrontier_mat' = r(vrsfrontier)
+        matrix `_r_vrsobs_mat' = r(vrsobs)
         local _r_vrs_n_crs = r(n_crs)
         local _r_vrs_n_drs = r(n_drs)
         local _r_vrs_n_irs = r(n_irs)
         local _r_has_vrsfrontier 1
+        capture quietly matrix list r(vrs_ipm_trace)
+        if _rc == 0 {
+            matrix `_r_vrs_ipm_trace_mat' = r(vrs_ipm_trace)
+            local _r_has_vrs_ipm_trace 1
+        }
     }
 
     // =========================================================================
     // 1.6 Simar-Wilson Bootstrap (if requested)
     // =========================================================================
-    if "`bootstrap'" != "" {
+    local _bootvars ""
+    tempname _r_bootstrap_mat
+    if "`bootstrap'" != "" & "`envars'" != "" {
+        tempname _swprefix
+        dea_sw2007 if `touse', inputs(`inputs') outputs(`outputs') ///
+            scores(`generate') envars(`envars') dmu(`dmu') ///
+            rts(`rts') orientation(`orientation') generate(`_swprefix') ///
+            bcreps(`reps1') reps(`reps2') level(`level') tolerance(`tolerance')
+        rename `_swprefix'_eff_bc `generate'_bc
+        drop `_swprefix'_eff
+        local _bootvars `generate'_bc
+        quietly mkmat `_bootvars' if `touse', matrix(`_r_bootstrap_mat')
+        matrix colnames `_r_bootstrap_mat' = bias_corrected
+    }
+    else if "`bootstrap'" != "" {
         _dea_bootstrap, inputs(`inputs') outputs(`outputs') ///
             dmu(`dmu') rts(`rts') orientation(`orientation') ///
-            generate(`generate') touse(`touse') engine(`engine') ///
-            envars(`envars') reps1(`reps1') reps2(`reps2') level(`level') ///
-            `debug'
+            generate(`generate') touse(`touse') ///
+            reps1(`reps1') level(`level') tolerance(`tolerance') `debug'
+        local _bootvars `generate'_bc `generate'_bias `generate'_se `generate'_lo `generate'_hi
+        quietly mkmat `_bootvars' if `touse', matrix(`_r_bootstrap_mat')
+        matrix colnames `_r_bootstrap_mat' = bias_corrected bias se ci_lo ci_hi
     }
 
     // =========================================================================
@@ -761,6 +1197,19 @@ program define dea, rclass
         rename `dmu' _dmu
         local dmu "_dmu"
     }
+    if `radialtolerance'>0 {
+        if !`_r_has_projection' {
+            di as error "projection recovery metadata was not returned"
+            exit 498
+        }
+        foreach _v of local _projection_vars {
+            quietly generate double `_v'=.
+        }
+        mata: st_store(selectindex(st_data(.,"`touse'")),tokens("`_projection_vars'"),st_matrix("`_r_projection_mat'")[.,1..3])
+        label variable _dea_radial "Original radial factor (theta input; phi output)"
+        label variable _dea_radial2 "Radial factor used by available Stage-2 projection"
+        label variable _dea_radial_adj "Stage-2 radial factor minus original radial factor"
+    }
     if "`saveref'" != "" {
         if !`_r_has_lambda' {
             di as error "no reference-weight matrix was returned by the selected model"
@@ -770,11 +1219,26 @@ program define dea, rclass
         matrix colnames `_r_lambda_mat' = `_ref_names'
     }
 
+    // Compute auxiliary IDEA summaries from the final stored columns, including
+    // a possible legacy-engine retry. Primary summaries came from the dispatcher.
+    if `_is_idea' {
+        quietly count if `touse' & abs(`generate'_opt - 1) <= `tolerance'
+        local _r_N_eff_opt = r(N)
+        quietly summarize `generate'_opt if `touse', meanonly
+        local _r_mean_opt = r(mean)
+        local _r_min_opt = r(min)
+        local _r_max_opt = r(max)
+        quietly count if `touse' & missing(`generate')
+        local _r_n_failed_primary = r(N)
+        quietly count if `touse' & missing(`generate'_opt)
+        local _r_n_failed_opt = r(N)
+    }
+
     // Save exactly once, after the final engine and persistent results are known.
     // Multiplier weights already have permanent names in the dispatcher.
     if "`saving'" != "" {
         local _saved_weights ""
-        if "`model'" == "multiplier" & "`saveweights'" != "" & `stage' == 2 {
+        if "`_model_effective'" == "multiplier" & "`saveweights'" != "" & `stage' == 2 {
             forvalues j = 1/`m_in' {
                 local _saved_weights `_saved_weights' _dea_v`j'
             }
@@ -783,17 +1247,84 @@ program define dea, rclass
             }
             local _saved_weights `_saved_weights' _dea_u0
         }
-        _dea_save, saving(`saving') `replace' ///
+        local _save_status ""
+        if `_r_has_stage_status' & `_r_has_solution_source' {
+            local _save_status stage_status_mat(`_r_stage_status_mat') solution_source_mat(`_r_solution_source_mat')
+        }
+        local _saved_modelvars ""
+        if "`_model_effective'"=="congestion" {
+            foreach _suffix in crs vrs cong_eff congestion se {
+                local _saved_modelvars `_saved_modelvars' `generate'_`_suffix'
+            }
+        }
+        if "`_model_effective'"=="sbmundesirable" local _saved_modelvars `bad'
+        _dea_save, modelvars(`_saved_modelvars') saving(`saving') `replace' `_save_status' ///
             inputs(`inputs') outputs(`outputs') dmu(`dmu') ///
             generate(`generate') touse(`touse') ///
-            refvars(`_ref_names') weightvars(`_saved_weights')
+            refvars(`_ref_names') weightvars(`_saved_weights') bootvars(`_bootvars') ///
+            ideavars(`_idea_auxvars') projectionvars(`_projection_vars')
     }
 
     // NOTE: return matrix MUST come BEFORE return add in Stata 16.
     // Build efficiency matrix from generate variable
     tempname _eff_mat
     qui mkmat `generate' if `touse', matrix(`_eff_mat')
+    if "`recoverylog'"!="" {
+        mata: _dea_rec_finalize_data("`generate'",("`engine'"=="ipm" ? 2 : 1))
+        tempname _rec_log _rec_stats
+        mata: _dea_rec_export("`_rec_log'","`_rec_stats'")
+        if `_rec_stats'[1,8]>0 return matrix recovery_log=`_rec_log'
+        return matrix recovery_stats=`_rec_stats'
+        return local recovery_scope "package_simplex_calls"
+    }
     return matrix efficiency = `_eff_mat'
+    if `_r_has_solution_source' {
+        return matrix solution_source = `_r_solution_source_mat'
+    }
+    if `_r_has_stage_status' {
+        return matrix stage_status = `_r_stage_status_mat'
+    }
+    if `_r_has_stage_linkage' {
+        tempname _link_counts
+        mata: st_matrix("`_link_counts'",(sum(st_matrix("`_r_stage_linkage_mat'")[.,15]:==1),sum(st_matrix("`_r_stage_linkage_mat'")[.,10]:<.)))
+        return scalar n_stage_link_adjusted = `_link_counts'[1,1]
+        return scalar n_stage_link_retries = `_link_counts'[1,2]
+        return matrix stage_linkage = `_r_stage_linkage_mat'
+    }
+    if `_r_has_numerical_diagnostics' {
+        tempname _diag_counts
+        mata: st_matrix("`_diag_counts'",(sum(st_matrix("`_r_numerical_diagnostics_mat'")[.,5]), ///
+            sum(st_matrix("`_r_numerical_diagnostics_mat'")[.,6]:==0), ///
+            sum((st_matrix("`_r_numerical_diagnostics_mat'")[.,4]:==0):&(st_matrix("`_r_numerical_diagnostics_mat'")[.,5]:==0))))
+        return scalar n_projection_checked = `_diag_counts'[1,1]
+        return scalar n_projection_outside_tol = `_diag_counts'[1,2]
+        return scalar n_projection_unchecked = `_diag_counts'[1,3]
+        return matrix numerical_diagnostics = `_r_numerical_diagnostics_mat'
+    }
+    if `_r_has_projection' {
+        tempname _projection_counts
+        mata: st_matrix("`_projection_counts'",(sum(st_matrix("`_r_projection_mat'")[.,6]:<.),sum(st_matrix("`_r_projection_mat'")[.,8]),_dea_ipm_trace_counts(st_matrix("`_r_projection_trace_mat'"))[1]))
+        return matrix projection = `_r_projection_mat'
+        return matrix projection_trace = `_r_projection_trace_mat'
+        return scalar n_projection_attempted = `_projection_counts'[1,1]
+        return scalar n_projection_adjusted = `_projection_counts'[1,2]
+        return scalar n_projection_solves = `_projection_counts'[1,1]+`_projection_counts'[1,3]
+        return local projection_vars "`_projection_vars'"
+    }
+    foreach _audit in ipm_trace vrs_ipm_trace {
+        if `_r_has_`_audit'' {
+            tempname _trace_counts
+            mata: st_matrix("`_trace_counts'",_dea_ipm_trace_counts(st_matrix("`_r_`_audit'_mat'")))
+            return matrix `_audit' = `_r_`_audit'_mat'
+            local _counter = cond("`_audit'"=="ipm_trace","ipm","vrs_ipm")
+            return scalar n_`_counter'_retries = `_trace_counts'[1,1]
+            return scalar n_`_counter'_recovered = `_trace_counts'[1,2]
+            return scalar n_`_counter'_conflicts = `_trace_counts'[1,3]
+        }
+    }
+    if "`bootstrap'" != "" {
+        return matrix bootstrap = `_r_bootstrap_mat'
+    }
 
     if `_r_has_lambda' {
         return matrix lambda = `_r_lambda_mat'
@@ -806,6 +1337,7 @@ program define dea, rclass
     }
     if `_r_has_vrsfrontier' {
         return matrix vrsfrontier = `_r_vrsfrontier_mat'
+        return matrix vrsobs = `_r_vrsobs_mat'
     }
     if `_r_has_multiplier_u0' {
         return matrix multiplier_u0 = `_r_multiplier_u0_mat'
@@ -818,23 +1350,70 @@ program define dea, rclass
     return local cmd "dea"
     return local cmdline `"`cmdline'"'
     return local engine "`engine'"
-    return local model "`model'"
+    return local model "`_model_effective'"
+    return local model_requested "`model'"
     return local rts "`rts'"
-    return local orientation "`orientation'"
+    return local orientation "`_reported_orientation'"
+    return local orientation_requested "`orientation'"
+    if inlist("`_model_effective'", "undesirable", "congestion", "sbmundesirable") {
+        return local lp_backend "stata_linearprogram"
+        if "`_model_effective'"=="congestion" return local formulation "legacy_equalities_ratio"
+        if "`_model_effective'"=="sbmundesirable" return local formulation "separable_bad_sbm"
+        if "`_model_effective'"=="undesirable" {
+            return local formulation "observed_direction_bad_equality"
+            return local disposability "equality"
+            return local direction "`direction'"
+        }
+    }
     return local inputs "`inputs'"
     return local outputs "`outputs'"
     return local generate "`generate'"
     return local refvars "`_ref_names'"
+    if "`bootstrap'" != "" {
+        return scalar bootstrap_reps = `reps1'
+        if "`envars'" != "" {
+            return scalar bootstrap_reps2 = `reps2'
+            return local bootstrap_procedure "sw2007_sequential"
+        }
+        else return local bootstrap_procedure "radial"
+        return scalar bootstrap_level = `level'
+        return local bootstrap_engine "simplex"
+        return local bootstrap_vars "`_bootvars'"
+    }
     return scalar defaults_applied = `_no_option_call'
     return scalar generated_dmu = `_generated_dmu'
     return scalar N          = `n_dmus'
     return scalar N_eff      = `_r_N_eff'
+    if inlist("`_model_effective'", "supereff", "supersbm") {
+        return scalar N_super = `_r_N_super'
+    }
     return scalar mean_eff   = `_r_mean_eff'
     return scalar min_eff    = `_r_min_eff'
     return scalar max_eff    = `_r_max_eff'
     return scalar n_failed   = `_r_n_failed'
+    if "`_model_effective'"=="congestion" {
+        foreach _cs in n_congested mean_vrs n_failed_primary n_failed_crs n_failed_vrs n_failed_cong n_failed_se {
+            return scalar `_cs' = `_r_cong_`_cs''
+        }
+    }
+    if `_r_has_stage_status' {
+        return scalar n_radial_failed = `_r_n_radial_failed'
+        return scalar n_stage2_failed = `_r_n_stage2_failed'
+    }
+    if `_is_idea' {
+        return local idea_method "`_idea_method'"
+        return local idea_vars "`generate' `_idea_auxvars'"
+        return local idea_numeric_vars "`_idea_numeric'"
+        return scalar N_eff_opt = `_r_N_eff_opt'
+        return scalar mean_opt = `_r_mean_opt'
+        return scalar min_opt = `_r_min_opt'
+        return scalar max_opt = `_r_max_opt'
+        return scalar n_failed_primary = `_r_n_failed_primary'
+        return scalar n_failed_opt = `_r_n_failed_opt'
+    }
     return scalar stage      = `stage'
     return scalar tolerance  = `tolerance'
+    return scalar radial_tolerance = `radialtolerance'
     return scalar auto_scale_ratio = `_auto_scale_ratio'
     return scalar auto_scale_threshold = `_auto_scale_threshold'
     return scalar auto_preemptive_ipm = `_auto_preemptive_ipm'
@@ -890,7 +1469,7 @@ program define _dea_parse_equal, rclass
 
     // Now `0' contains: outputs [if] [in], [options]
     #del ;
-    syntax varlist(min=1 numeric) [if] [in] [using/]
+    syntax varlist(min=1) [if] [in] [using/]
     [,
         DMU(varname)
         Rts(string)
@@ -901,12 +1480,15 @@ program define _dea_parse_equal, rclass
         MODel(string)
         METhod(string)
         GENerate(name)
-        TOLerance(real 1e-7)
-        TOL1(real 1e-14)
-        TOL2(real 1e-8)
+        TOLerance(string)
+        RADIALTolerance(real 0)
+        TOL1(string)
+        TOL2(string)
         TRACE
+        RECOVERYLog
         SAVing(string)
         REPLACE
+        REPLACEVARS
         DEBUG
         ENGine(string)
         CONTRACTCHECK
@@ -921,21 +1503,31 @@ program define _dea_parse_equal, rclass
         DDFBETA(name)
         BAD(varlist numeric)
         DIRection(string)
+        DISPosability(string)
+        WEAKMATrix
+        CONGMethod(string)
+        CONGWeight(string)
+        CONGMATrix
+        CONGRanges
+        CONGPolicy(string)
+        CONGAnchor(string)
+        CONGREFerence(string)
+        CONGSelectlimit(string)
 
         Bounded(varlist)
         ORDinal(varlist)
-        XLO(varlist numeric)
-        XHI(varlist numeric)
-        YLO(varlist numeric)
-        YHI(varlist numeric)
+        XLO(varlist)
+        XHI(varlist)
+        YLO(varlist)
+        YHI(varlist)
         XORD(varlist numeric)
         YORD(varlist numeric)
 
         BOOtstrap
         ENVars(varlist numeric)
         REPS1(integer 100)
-        REPS2(integer 2000)
-        Level(integer 95)
+        REPS2(string)
+        Level(real 95)
     ];
     #del cr
 
@@ -957,33 +1549,45 @@ program define _dea_parse_equal, rclass
     }
     if "`ort'" != "" local orientation "`ort'"
 
-    // Reconcile tolerance: tol1/tol2 (legacy) vs tolerance() (new)
-    // If user explicitly set tolerance (not default), use it
-    // Otherwise fall back to tol1 as primary tolerance
-    if `tolerance' == 1e-7 & `tol1' != 1e-14 {
-        local tolerance = `tol1'
+    // The old two-threshold engine is no longer used. Never ignore a request.
+    if "`tol2'" != "" {
+        di as error "tol2() is obsolete; use tolerance() for the integrated solver"
+        exit 198
     }
+    if "`tol1'" != "" & "`tolerance'" != "" {
+        di as error "specify only one of tolerance() or its legacy alias tol1()"
+        exit 198
+    }
+    if "`tol1'" != "" {
+        local tolerance "`tol1'"
+        di as text "note: tol1() is a deprecated alias; use tolerance()"
+    }
+    if "`tolerance'" == "" local tolerance 1e-7
 
     // Delegate to common normalizer
-    _dea_normalize_options,                           ///
+    capture noisily _dea_normalize_options,                           ///
         inputs(`invarnames') outputs(`outputs')       ///
         dmu(`dmu') rts(`rts') orientation(`orientation') ///
         model(`model') stage(`stage') method(`method')   ///
-        fdh(`fdh') tolerance(`tolerance')             ///
-        generate(`generate') trace(`trace')           ///
-        saving(`saving') replace(`replace') debug(`debug') ///
+        fdh(`fdh') tolerance(`tolerance') radialtolerance(`radialtolerance')             ///
+        generate(`generate') trace(`trace') recoverylog(`recoverylog')           ///
+        saving(`saving') replace(`replace') replacevars(`replacevars') debug(`debug') ///
         engine(`engine') contractcheck(`contractcheck') ///
         reference(`reference') saveref(`saveref')     ///
         saveweights(`saveweights')                    ///
         w(`w') p(`p') gx(`gx') gy(`gy') ddfbeta(`ddfbeta') ///
-        bad(`bad') direction(`direction')             ///
+        bad(`bad') direction(`direction') disposability(`disposability') weakmatrix(`weakmatrix') ///
+        congmethod(`congmethod') congweight(`congweight') congmatrix(`congmatrix') congranges(`congranges') ///
+        congpolicy(`congpolicy') conganchor(`conganchor') congreference(`congreference') congselectlimit(`congselectlimit') ///
         bounded(`bounded') ordinal(`ordinal')         ///
         xlo(`xlo') xhi(`xhi') ylo(`ylo') yhi(`yhi')  ///
         xord(`xord') yord(`yord')                     ///
         bootstrap(`bootstrap') envars(`envars')       ///
         reps1(`reps1') reps2(`reps2') level(`level')  ///
         ifcond(`if') incond(`in')
-
+    local _c53_parse_rc=_rc
+    c_local _c53_hint "`_c53_hint'"
+    if `_c53_parse_rc' exit `_c53_parse_rc'
     return add
 end
 
@@ -994,9 +1598,9 @@ program define _dea_parse_standard, rclass
     version 16.0
 
     #del ;
-    syntax varlist(min=1 numeric) [if] [in]
+    syntax varlist(min=1) [if] [in]
     [,
-        Inputs(varlist numeric min=1)
+        Inputs(varlist min=1)
         DMU(varname)
         Rts(string)
         ORT(string)
@@ -1007,9 +1611,12 @@ program define _dea_parse_standard, rclass
         METhod(string)
         GENerate(name)
         TOLerance(real 1e-7)
+        RADIALTolerance(real 0)
         TRACE
+        RECOVERYLog
         SAVing(string)
         REPLACE
+        REPLACEVARS
         DEBUG
         ENGine(string)
         CONTRACTCHECK
@@ -1024,21 +1631,31 @@ program define _dea_parse_standard, rclass
         DDFBETA(name)
         BAD(varlist numeric)
         DIRection(string)
+        DISPosability(string)
+        WEAKMATrix
+        CONGMethod(string)
+        CONGWeight(string)
+        CONGMATrix
+        CONGRanges
+        CONGPolicy(string)
+        CONGAnchor(string)
+        CONGREFerence(string)
+        CONGSelectlimit(string)
 
         Bounded(varlist)
         ORDinal(varlist)
-        XLO(varlist numeric)
-        XHI(varlist numeric)
-        YLO(varlist numeric)
-        YHI(varlist numeric)
+        XLO(varlist)
+        XHI(varlist)
+        YLO(varlist)
+        YHI(varlist)
         XORD(varlist numeric)
         YORD(varlist numeric)
 
         BOOtstrap
         ENVars(varlist numeric)
         REPS1(integer 100)
-        REPS2(integer 2000)
-        Level(integer 95)
+        REPS2(string)
+        Level(real 95)
     ];
     #del cr
 
@@ -1059,25 +1676,29 @@ program define _dea_parse_standard, rclass
     if "`ort'" != "" local orientation "`ort'"
 
     // Delegate to common normalizer
-    _dea_normalize_options,                           ///
+    capture noisily _dea_normalize_options,                           ///
         inputs(`inputs') outputs(`outputs')           ///
         dmu(`dmu') rts(`rts') orientation(`orientation') ///
         model(`model') stage(`stage') method(`method')   ///
-        fdh(`fdh') tolerance(`tolerance')             ///
-        generate(`generate') trace(`trace')           ///
-        saving(`saving') replace(`replace') debug(`debug') ///
+        fdh(`fdh') tolerance(`tolerance') radialtolerance(`radialtolerance')             ///
+        generate(`generate') trace(`trace') recoverylog(`recoverylog')           ///
+        saving(`saving') replace(`replace') replacevars(`replacevars') debug(`debug') ///
         engine(`engine') contractcheck(`contractcheck') ///
         reference(`reference') saveref(`saveref')     ///
         saveweights(`saveweights')                    ///
         w(`w') p(`p') gx(`gx') gy(`gy') ddfbeta(`ddfbeta') ///
-        bad(`bad') direction(`direction')             ///
+        bad(`bad') direction(`direction') disposability(`disposability') weakmatrix(`weakmatrix') ///
+        congmethod(`congmethod') congweight(`congweight') congmatrix(`congmatrix') congranges(`congranges') ///
+        congpolicy(`congpolicy') conganchor(`conganchor') congreference(`congreference') congselectlimit(`congselectlimit') ///
         bounded(`bounded') ordinal(`ordinal')         ///
         xlo(`xlo') xhi(`xhi') ylo(`ylo') yhi(`yhi')  ///
         xord(`xord') yord(`yord')                     ///
         bootstrap(`bootstrap') envars(`envars')       ///
         reps1(`reps1') reps2(`reps2') level(`level')  ///
         ifcond(`if') incond(`in')
-
+    local _c53_parse_rc=_rc
+    c_local _c53_hint "`_c53_hint'"
+    if `_c53_parse_rc' exit `_c53_parse_rc'
     return add
 end
 
@@ -1098,10 +1719,12 @@ program define _dea_normalize_options, rclass
         [METHod(string)]                    ///
         [FDH(string)]                       ///
         [TOLerance(real 1e-7)]              ///
+        [RADIALTolerance(real 0)]           ///
         [GENerate(name)]                    ///
-        [TRACE(string)]                     ///
+        [TRACE(string)] [RECOVERYLog(string)]                     ///
         [SAVing(string)]                    ///
         [REPLACE(string)]                   ///
+        [REPLACEVARS(string)]               ///
         [DEBUG(string)]                     ///
         [ENGine(string)]                    ///
         [CONTRACTCHECK(string)]             ///
@@ -1115,21 +1738,40 @@ program define _dea_normalize_options, rclass
         [DDFBETA(name)]                     ///
         [Bounded(varlist)]                  ///
         [ORDinal(varlist)]                  ///
-        [XLO(varlist numeric)]              ///
-        [XHI(varlist numeric)]              ///
-        [YLO(varlist numeric)]              ///
-        [YHI(varlist numeric)]              ///
+        [XLO(varlist)]                      ///
+        [XHI(varlist)]                      ///
+        [YLO(varlist)]                      ///
+        [YHI(varlist)]                      ///
         [XORD(varlist numeric)]             ///
         [YORD(varlist numeric)]             ///
         [BOOTstrap(string)]                 ///
         [ENVars(varlist numeric)]           ///
         [REPS1(integer 100)]                ///
-        [REPS2(integer 2000)]               ///
-        [Level(integer 95)]                 ///
+        [REPS2(string)]               ///
+        [Level(real 95)]                 ///
         [IFCOND(string)]                    ///
         [INCOND(string)]                    ///
         [BAD(varlist numeric)]              ///
-        [DIRection(string)]
+        [DIRection(string)]                 ///
+        [DISPosability(string)] [WEAKMATrix(string)] ///
+        [CONGMethod(string)] [CONGWeight(string)] ///
+        [CONGMATrix(string)] [CONGRanges(string)] ///
+        [CONGPolicy(string)] [CONGAnchor(string)] [CONGREFerence(string)] [CONGSelectlimit(string)]
+
+    local _c53_cooper = (lower("`model'")=="congestion" & lower("`congmethod'")=="cooper")
+    c_local _c53_hint "`_c53_cooper'"
+    // Validate the effective tolerance shared by both public syntax forms.
+    // Stata missing values compare larger than ordinary numbers, so <=0 alone
+    // does not exclude them. Reject before sample marking or output creation.
+    if missing(`tolerance') | `tolerance' <= 0 {
+        di as error "tolerance() must be positive and finite"
+        exit 198
+    }
+
+    if missing(`radialtolerance') | `radialtolerance' < 0 | `radialtolerance' >= 1 {
+        di as error "radialtolerance() must be finite and in [0,1)"
+        exit 198
+    }
 
     // -----------------------------------------------------------------
     // 3.1 Normalize RTS
@@ -1176,17 +1818,6 @@ program define _dea_normalize_options, rclass
         }
     }
 
-    // FDH does not allow rts()
-    if "`fdh'" != "" & "`rts'" != "vrs" {
-        if "`rts'" != "crs" {
-            // User explicitly set non-VRS RTS with FDH
-            di as error "FDH model does not support rts() option"
-            exit 198
-        }
-        // Default: silently set to VRS for FDH
-        local rts "vrs"
-    }
-
     // -----------------------------------------------------------------
     // 3.3 Normalize Model
     // -----------------------------------------------------------------
@@ -1200,8 +1831,232 @@ program define _dea_normalize_options, rclass
                     "  congestion sbmundesirable"
         exit 198
     }
+    // Separate the bad-equality technology from convex joint weak disposal.
+    local disposability = lower("`disposability'")
+    if "`model'"!="undesirable" & "`disposability'`weakmatrix'"!="" {
+        di as error "disposability() and weakmatrix require model(undesirable)"
+        exit 198
+    }
+    if "`disposability'"=="" local disposability "equality"
+    if !inlist("`disposability'","equality","weak") {
+        di as error "disposability() must be equality or weak"
+        exit 198
+    }
+    if "`weakmatrix'"!="" & "`disposability'"!="weak" {
+        di as error "weakmatrix requires disposability(weak)"
+        exit 198
+    }
+    if "`disposability'"=="weak" {
+        if "`fdh'`w'`p'`gx'`gy'`reference'`saveref'`saveweights'`trace'"!="" {
+            di as error "disposability(weak) does not support FDH, prices, gx/gy, reference/weight exports or trace; use weakmatrix/debug"
+            exit 198
+        }
+        if `user_set_ort' {
+            di as error "disposability(weak) uses direction(yb|xyb|x); omit ort()/orientation()"
+            exit 198
+        }
+    }
+
+    if "`congpolicy'`conganchor'`congreference'`congselectlimit'"!="" & ("`model'"!="congestion" | lower("`congmethod'")!="cooper") {
+        di as error "Cooper selection options require model(congestion) congmethod(cooper)"
+        exit 198
+    }
+    // Congestion conventions are explicit; legacy callers retain their ratio.
+    local congmethod = lower("`congmethod'")
+    local congweight = lower("`congweight'")
+    if "`model'"!="congestion" & "`congmethod'`congweight'`congmatrix'`congranges'"!="" {
+        di as error "congmethod(), congweight(), congmatrix and congranges require model(congestion)"
+        exit 198
+    }
+    if "`congmethod'"=="" local congmethod "legacy"
+    if !inlist("`congmethod'","legacy","cooper") {
+        di as error "congmethod() must be legacy or cooper"
+        exit 198
+    }
+    if "`congmethod'"=="legacy" & "`congweight'`congmatrix'`congranges'"!="" {
+        di as error "congweight(), congmatrix and congranges require congmethod(cooper)"
+        exit 198
+    }
+    if "`congmethod'"=="cooper" {
+        if "`congweight'"=="" local congweight "raw"
+        if !inlist("`congweight'","raw","normalized") {
+            di as error "congweight() must be raw or normalized"
+            exit 198
+        }
+        if "`fdh'`bad'`direction'`w'`p'`gx'`gy'`reference'`saveref'`saveweights'`trace'"!="" {
+            di as error "Cooper congestion does not support FDH, bad/direction, price/direction vectors or reference/weight exports or trace (use debug)"
+            exit 198
+        }
+        if `stage'!=2 | (`user_set_ort' & "`orientation'"!="output") {
+            di as error "Cooper congestion requires the complete two-stage output-oriented procedure"
+            exit 198
+        }
+    }
+
     // model(fdh) implies fdh flag
     if "`model'" == "fdh" local fdh "fdh"
+    // Resolve the IDEA path before sample marking, automatic IDs or output
+    // replacement. Both syntax forms use this same validation and dispatch plan.
+    local _idea_interval = ("`xlo'`xhi'`ylo'`yhi'" != "")
+    local _idea_legacy = ("`bounded'`ordinal'`xord'`yord'" != "")
+    local _idea_method ""
+    local _idea_numeric ""
+    local _idea_lowers ""
+    local _idea_uppers ""
+    if `_idea_interval' | `_idea_legacy' | "`model'" == "imprecise" {
+        if "`fdh'" != "" | !inlist("`model'", "te", "imprecise") {
+            di as error "imprecise-data options require model(te) or model(imprecise), without fdh"
+            exit 198
+        }
+        if !`_idea_interval' & !`_idea_legacy' {
+            di as error "model(imprecise) requires bounds or ordinal specifications"
+            exit 198
+        }
+        if `_idea_interval' {
+            local _idea_method "interval"
+            foreach _side in x y {
+                local _needed : word count `inputs'
+                if "`_side'" == "y" local _needed : word count `outputs'
+                foreach _end in lo hi {
+                    local _option "`_side'`_end'"
+                    local _count : word count ``_option''
+                    if `_count' > 0 & `_count' != `_needed' {
+                        di as error "`_option'() must have `_needed' variables (same as the corresponding model varlist)"
+                        exit 198
+                    }
+                    if !`_idea_legacy' {
+                        foreach _v of local `_option' {
+                            capture confirm numeric variable `_v'
+                            if _rc {
+                                di as error "`_option'() requires numeric bound variables"
+                                exit 109
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if `_idea_legacy' {
+            local _idea_method "legacy"
+            // Stata list subtraction removes occurrences, so normalize repeated
+            // names before checking membership as well as before transforming.
+            local xord : list uniq xord
+            local yord : list uniq yord
+            local _outside : list xord - inputs
+            if "`_outside'" != "" {
+                di as error "xord() variables must be model inputs: `_outside'"
+                exit 198
+            }
+            local _outside : list yord - outputs
+            if "`_outside'" != "" {
+                di as error "yord() variables must be model outputs: `_outside'"
+                exit 198
+            }
+            local ordinal `ordinal' `xord' `yord'
+            local ordinal : list uniq ordinal
+            local bounded : list uniq bounded
+            local _io `inputs' `outputs'
+            foreach _option in bounded ordinal {
+                local _outside : list `_option' - _io
+                if "`_outside'" != "" {
+                    di as error "`_option'() variables must be model inputs or outputs: `_outside'"
+                    exit 198
+                }
+            }
+            foreach _v of local ordinal {
+                capture confirm numeric variable `_v'
+                if _rc {
+                    di as error "ordinal variables must be numeric: `_v'"
+                    exit 198
+                }
+            }
+            local _overlap : list bounded & ordinal
+            if "`_overlap'" != "" {
+                di as error "a variable cannot be both bounded and ordinal: `_overlap'"
+                exit 198
+            }
+            local _shared : list inputs & outputs
+            local _transformed `bounded' `ordinal'
+            local _ambiguous : list _shared & _transformed
+            if "`_ambiguous'" != "" {
+                di as error "a transformed IDEA variable must have one input/output role: `_ambiguous'"
+                exit 198
+            }
+            // Numeric lists retain full positional alignment. Existing bounded
+            // and ordinal dimensions must use their own names as placeholders;
+            // a second source of bounds for the same dimension is ambiguous.
+            if `_idea_interval' {
+                foreach _side in x y {
+                    local _dims `inputs'
+                    if "`_side'" == "y" local _dims `outputs'
+                    local _lo_option "`_side'lo"
+                    local _hi_option "`_side'hi"
+                    if "``_lo_option''``_hi_option''" != "" {
+                        local _n : word count `_dims'
+                        forvalues _j = 1/`_n' {
+                            local _v : word `_j' of `_dims'
+                            local _lo : word `_j' of ``_lo_option''
+                            local _hi : word `_j' of ``_hi_option''
+                            if "`_lo'" == "" local _lo "`_v'"
+                            if "`_hi'" == "" local _hi "`_v'"
+                            local _special : list _v in _transformed
+                            if `_special' {
+                                if "`_lo'" != "`_v'" | "`_hi'" != "`_v'" {
+                                    di as error "bounds for bounded/ordinal variable `_v' must use `_v' itself as the positional placeholder"
+                                    exit 198
+                                }
+                            }
+                            else {
+                                foreach _source in `_lo' `_hi' {
+                                    capture confirm numeric variable `_source'
+                                    if _rc {
+                                        di as error "numeric bounds for `_v' require numeric endpoint variables"
+                                        exit 109
+                                    }
+                                }
+                                local _occurrences 0
+                                foreach _candidate of local _io {
+                                    if "`_candidate'" == "`_v'" local ++_occurrences
+                                }
+                                if `_occurrences' != 1 {
+                                    di as error "numeric bounded variable `_v' must occur once in the input/output lists"
+                                    exit 198
+                                }
+                                local _idea_numeric `_idea_numeric' `_v'
+                                local _idea_lowers `_idea_lowers' `_lo'
+                                local _idea_uppers `_idea_uppers' `_hi'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Both public syntaxes admit string names so legacy bounded outputs and
+    // Form B inputs reach the same worker. Every other model variable must
+    // still be numeric, before markout or any output replacement can occur.
+    local _numeric_io `inputs' `outputs'
+    local _numeric_io : list uniq _numeric_io
+    if "`_idea_method'" == "legacy" {
+        local _numeric_io : list _numeric_io - bounded
+    }
+    foreach _v of local _numeric_io {
+        capture confirm numeric variable `_v'
+        if _rc {
+            di as error "model variable `_v' must be numeric; string intervals require bounded() in legacy IDEA"
+            exit 109
+        }
+    }
+
+    // FDH is nonconvex and uses no radial RTS constraint. Preserve the public
+    // VRS label for both spellings; CRS/default is accepted as before for fdh.
+    if "`fdh'" != "" {
+        if !inlist("`rts'", "crs", "vrs") {
+            di as error "FDH supports only default/CRS or VRS labels; NIRS/NDRS are not implemented"
+            exit 198
+        }
+        local rts "vrs"
+    }
 
     // -----------------------------------------------------------------
     // 3.3a Validate model(undesirable) options
@@ -1241,6 +2096,39 @@ program define _dea_normalize_options, rclass
         local rts "vrs"
     }
 
+    // Environmental inference uses the complete sequential SW2007 module.
+    if "`envars'" != "" & "`bootstrap'" == "" {
+        di as error "envars() requires bootstrap"
+        exit 198
+    }
+    if "`reps2'" != "" & "`envars'" == "" {
+        di as error "reps2() requires bootstrap and envars()"
+        exit 198
+    }
+    if "`envars'" != "" {
+        if "`reps2'" == "" local reps2 "2000"
+        local _b2 = real("`reps2'")
+        if missing(`_b2') | `_b2' < 2 | `_b2' != floor(`_b2') {
+            di as error "reps2() must be an integer of at least 2"
+            exit 198
+        }
+        local reps2 = `_b2'
+    }
+    if "`bootstrap'" != "" {
+        if "`model'" != "te" | "`fdh'" != "" | "`_idea_method'" != "" {
+            di as error "bootstrap requires radial model(te), without FDH or imprecise-data options"
+            exit 198
+        }
+        if `reps1' < 50 {
+            di as error "reps1() must be at least 50"
+            exit 198
+        }
+        if missing(`level') | `level' <= 0 | `level' >= 100 {
+            di as error "level() must be strictly between 0 and 100"
+            exit 198
+        }
+    }
+
     // -----------------------------------------------------------------
     // 3.4 Validate Stage
     // -----------------------------------------------------------------
@@ -1249,7 +2137,7 @@ program define _dea_normalize_options, rclass
         exit 198
     }
     if "`contractcheck'" != "" & ("`model'" != "te" | "`fdh'" != "" | ///
-        "`bounded'" != "" | "`ordinal'" != "" | "`bootstrap'" != "") {
+        "`_idea_method'" != "" | "`bootstrap'" != "") {
         di as error "contractcheck is an internal verification option for radial model(te) only"
         exit 198
     }
@@ -1315,6 +2203,30 @@ program define _dea_normalize_options, rclass
     
     // Assign to engine variable
     local engine "`engine_choice'"
+    if `radialtolerance'>0 & ("`engine'"!="ipm" | "`auto_fallback'"!="" | ///
+        "`model'"!="te" | `stage'!=2 | "`fdh'"!="" | "`_idea_method'"!="") {
+        di as error "positive radialtolerance() requires engine(ipm) model(te) stage(2), without FDH or imprecise-data options"
+        exit 198
+    }
+
+    if "`model'"=="congestion" & "`congmethod'"=="cooper" {
+        if "`auto_fallback'"!="" {
+            di as error "Cooper engine(auto) is not implemented; choose simplex or ipm explicitly"
+            exit 198
+        }
+        if "`engine'"!="simplex" & "`congpolicy'`conganchor'`congreference'`congselectlimit'"!="" {
+            di as error "Cooper selection options require engine(simplex)"
+            exit 198
+        }
+        if "`congpolicy'"=="" local congpolicy "stage1"
+        local congpolicy=lower(strtrim("`congpolicy'"))
+        if !inlist("`congpolicy'","stage1","stage2") exit 198
+        if "`engine'"=="ipm" local congpolicy ""
+        if "`congselectlimit'"=="" local congselectlimit "16"
+        if !inlist(real("`congselectlimit'"),16,128) exit 198
+        if "`congpolicy'"=="stage2" & "`congreference'"=="" exit 198
+        if "`congpolicy'"!="stage2" & "`congreference'"!="" exit 198
+    }
 
     // Both engines support all models (including undesirable) — no override needed.
 
@@ -1327,7 +2239,7 @@ program define _dea_normalize_options, rclass
     local m_in : word count `inputs'
     local m_out : word count `outputs'
 
-    _dea_validate_model_opts, model(`model') ///
+    _dea_validate_model_opts, model(`model') orientation(`orientation') ///
         m_in(`m_in') m_out(`m_out') ///
         w(`w') p(`p') gx(`gx') gy(`gy') ///
         xlo(`xlo') xhi(`xhi') ylo(`ylo') yhi(`yhi') ///
@@ -1353,6 +2265,16 @@ program define _dea_normalize_options, rclass
     // -----------------------------------------------------------------
     // 3.9 Return all parsed values
     // -----------------------------------------------------------------
+    return local disposability "`disposability'"
+    return local weakmatrix "`weakmatrix'"
+    return local congmethod "`congmethod'"
+    return local congweight "`congweight'"
+    return local congmatrix "`congmatrix'"
+    return local congranges "`congranges'"
+    return local congpolicy "`congpolicy'"
+    return local conganchor "`conganchor'"
+    return local congreference "`congreference'"
+    return local congselectlimit "`congselectlimit'"
     return local inputs      "`inputs'"
     return local outputs     "`outputs'"
     return local dmu         "`dmu'"
@@ -1360,12 +2282,15 @@ program define _dea_normalize_options, rclass
     return local orientation "`orientation'"
     return local model       "`model'"
     return scalar stage      = `stage'
+    return scalar radial_tolerance = `radialtolerance'
     return local method      "`method'"
     return scalar tolerance  = `tolerance'
     return local generate    "`generate'"
+    return local recoverylog "`recoverylog'"
     return local trace       "`trace'"
     return local saving      "`saving'"
     return local replace     "`replace'"
+    return local replacevars "`replacevars'"
     return local debug       "`debug'"
     return local contractcheck "`contractcheck'"
     return local fdh         "`fdh'"
@@ -1387,10 +2312,14 @@ program define _dea_normalize_options, rclass
     return local yord        "`yord'"
     return local bounded     "`bounded'"
     return local ordinal     "`ordinal'"
+    return local idea_method "`_idea_method'"
+    return local idea_numeric "`_idea_numeric'"
+    return local idea_lowers "`_idea_lowers'"
+    return local idea_uppers "`_idea_uppers'"
     return local bootstrap   "`bootstrap'"
     return local envars      "`envars'"
     return scalar reps1      = `reps1'
-    return scalar reps2      = `reps2'
+    return local reps2       "`reps2'"
     return scalar level      = `level'
     return local ifcond      "`ifcond'"
     return local incond      "`incond'"
@@ -1408,11 +2337,11 @@ end
 ********************************************************************************
 
 program define _dea_validate_model_opts
-    syntax , MODEL(string) m_in(integer) m_out(integer) ///
+    syntax , MODEL(string) ORIentation(string) m_in(integer) m_out(integer) ///
         [W(varlist numeric)] [P(varlist numeric)]       ///
         [GX(varlist numeric)] [GY(varlist numeric)]     ///
-        [XLO(varlist numeric)] [XHI(varlist numeric)]   ///
-        [YLO(varlist numeric)] [YHI(varlist numeric)]   ///
+        [XLO(varlist)] [XHI(varlist)]   ///
+        [YLO(varlist)] [YHI(varlist)]   ///
         [XORD(varlist numeric)] [YORD(varlist numeric)] ///
         [Bounded(varlist)] [ORDinal(varlist)] ///
         [REFerence(string)] [SAVERef(string)] [SAVEWeights(string)]
@@ -1484,21 +2413,30 @@ program define _dea_validate_model_opts
         }
     }
 
-    // Allocative requires w() or p()
+    // Validate the composite model before creating or replacing results.
+    // Missing or mismatched lists must not reach the composite LP engines.
     if "`model'" == "allocative" {
-        if "`w'" == "" & "`p'" == "" {
-            di as error "model(allocative) requires w() for cost or p() for revenue"
+        if "`orientation'" == "input" & "`w'" == "" {
+            di as error "model(allocative) with input orientation requires w()"
             exit 198
         }
-    }
-
-    // Imprecise DEA validation
-    if "`model'" == "imprecise" {
-        if "`xlo'" == "" & "`xhi'" == "" & "`ylo'" == "" & "`yhi'" == "" & ///
-           "`xord'" == "" & "`yord'" == "" & ///
-           "`bounded'" == "" & "`ordinal'" == "" {
-            di as error "model(imprecise) requires bounds or ordinal specifications"
+        if "`orientation'" == "output" & "`p'" == "" {
+            di as error "model(allocative) with output orientation requires p()"
             exit 198
+        }
+        if "`w'" != "" {
+            local nw : word count `w'
+            if `nw' != `m_in' {
+                di as error "w() must have `m_in' variables (same as inputs)"
+                exit 198
+            }
+        }
+        if "`p'" != "" {
+            local np : word count `p'
+            if `np' != `m_out' {
+                di as error "p() must have `m_out' variables (same as outputs)"
+                exit 198
+            }
         }
     }
 
@@ -1532,7 +2470,7 @@ program define _dea_model_dispatch, rclass
         [BAD(varlist numeric)] [DIRection(string)] ///
         [REFerence] [SAVERef] [SAVEWeights] ///
         [TRACE] [DEBUG] ///
-        [SBMORT(integer 0)]
+        [SBMORT(integer 0)] [RADIALTolerance(real 0)]
 
     // =================================================================
     // Pre-create lambda variables in this scope (if reference requested)
@@ -1556,19 +2494,57 @@ program define _dea_model_dispatch, rclass
     // =================================================================
     local slack_in_vars ""
     local slack_out_vars ""
-    if "`model'" == "te" & `stage' == 2 & "`engine'" != "ipm" {
+    if "`model'" == "te" & `stage' == 2 {
         local _m_in : word count `inputs'
         local _m_out : word count `outputs'
         forvalues j = 1/`_m_in' {
             tempvar _si`j'
-            qui gen double `_si`j'' = 0 if `touse'
+            qui gen double `_si`j'' = . if `touse'
             local slack_in_vars "`slack_in_vars' `_si`j''"
         }
         forvalues j = 1/`_m_out' {
             tempvar _so`j'
-            qui gen double `_so`j'' = 0 if `touse'
+            qui gen double `_so`j'' = . if `touse'
             local slack_out_vars "`slack_out_vars' `_so`j''"
         }
+    }
+
+    // Keep TE status and provenance in this scope for both engines.
+    local stage1_status_var ""
+    local stage2_status_var ""
+    local score_source_var ""
+    local ref_stage_var ""
+    local ipm_trace_mat ""
+    local projection_mat ""
+    local projection_trace_mat ""
+    local diagnostics_mat ""
+    local linkage_mat ""
+    if "`model'" == "te" & "`engine'" != "ipm" {
+        tempname _linkage_mat
+        local linkage_mat "`_linkage_mat'"
+    }
+    if "`model'" == "te" & "`engine'" == "ipm" {
+        tempname _ipm_trace_mat
+        local ipm_trace_mat "`_ipm_trace_mat'"
+        if `radialtolerance'>0 {
+            tempname _projection_mat _projection_trace_mat
+            local projection_mat "`_projection_mat'"
+            local projection_trace_mat "`_projection_trace_mat'"
+        }
+    }
+    if "`model'" == "te" {
+        tempname _diagnostics_mat
+        local diagnostics_mat "`_diagnostics_mat'"
+        tempvar _score_source _ref_stage
+        quietly generate byte `_score_source' = . if `touse'
+        quietly generate byte `_ref_stage' = . if `touse'
+        local score_source_var "`_score_source'"
+        local ref_stage_var "`_ref_stage'"
+        tempvar _stage1_status _stage2_status
+        quietly generate byte `_stage1_status' = . if `touse'
+        quietly generate byte `_stage2_status' = . if `touse'
+        local stage1_status_var "`_stage1_status'"
+        local stage2_status_var "`_stage2_status'"
     }
 
     // =================================================================
@@ -1585,7 +2561,10 @@ program define _dea_model_dispatch, rclass
         local _m_out : word count `outputs'
         forvalues j = 1/`_m_in' {
             local _wv "_dea_v`j'"
-            capture drop `_wv'
+            foreach _drop_output in `_wv' {
+                capture confirm variable `_drop_output', exact
+                if !_rc quietly drop `_drop_output'
+            }
             qui gen double `_wv' = . if `touse'
             local _xname : word `j' of `inputs'
             label var `_wv' "Multiplier input weight for `_xname'"
@@ -1593,16 +2572,22 @@ program define _dea_model_dispatch, rclass
         }
         forvalues j = 1/`_m_out' {
             local _wv "_dea_u`j'"
-            capture drop `_wv'
+            foreach _drop_output in `_wv' {
+                capture confirm variable `_drop_output', exact
+                if !_rc quietly drop `_drop_output'
+            }
             qui gen double `_wv' = . if `touse'
             local _yname : word `j' of `outputs'
             label var `_wv' "Multiplier output weight for `_yname'"
             local weight_out_vars "`weight_out_vars' `_wv'"
         }
         local weight_u0_var "_dea_u0"
-        capture drop `weight_u0_var'
+        foreach _drop_output in `weight_u0_var' {
+            capture confirm variable `_drop_output', exact
+            if !_rc quietly drop `_drop_output'
+        }
         qui gen double `weight_u0_var' = . if `touse'
-        label var `weight_u0_var' "Multiplier intercept: u'y - v'x + u0 <= 0"
+        label var `weight_u0_var' "Multiplier intercept: u'y - v'x - u0 <= 0"
     }
 
     // =================================================================
@@ -1618,6 +2603,11 @@ program define _dea_model_dispatch, rclass
             bad(`bad') direction(`direction') ///
             `reference' `saveref' `saveweights' ///
             lambda_vars(`lambda_vars') ///
+            slack_in_vars(`slack_in_vars') slack_out_vars(`slack_out_vars') ///
+            stage1_status_var(`stage1_status_var') stage2_status_var(`stage2_status_var') ///
+            score_source_var(`score_source_var') ref_stage_var(`ref_stage_var') diagnostics_mat(`diagnostics_mat') ///
+            ipm_trace_mat(`ipm_trace_mat') radialtolerance(`radialtolerance') ///
+            projection_mat(`projection_mat') projection_trace_mat(`projection_trace_mat') ///
             weight_in_vars(`weight_in_vars') ///
             weight_out_vars(`weight_out_vars') ///
             weight_u0_var(`weight_u0_var') ///
@@ -1636,6 +2626,8 @@ program define _dea_model_dispatch, rclass
             lambda_vars(`lambda_vars') ///
             slack_in_vars(`slack_in_vars') ///
             slack_out_vars(`slack_out_vars') ///
+            stage1_status_var(`stage1_status_var') stage2_status_var(`stage2_status_var') ///
+            score_source_var(`score_source_var') ref_stage_var(`ref_stage_var') diagnostics_mat(`diagnostics_mat') linkage_mat(`linkage_mat') ///
             weight_in_vars(`weight_in_vars') ///
             weight_out_vars(`weight_out_vars') ///
             weight_u0_var(`weight_u0_var') ///
@@ -1647,7 +2639,21 @@ program define _dea_model_dispatch, rclass
     // Display results
     // =================================================================
     // lambda_vars and slack_in/out_vars already live in this scope
-    // (lambda: pre-created above; slacks: pre-created or captured from IPM)
+    // All these variables are pre-created above for both engines.
+
+    if `radialtolerance'>0 {
+        mata: st_local("_adjusted",strofreal(sum(st_matrix("`projection_mat'")[.,8])))
+        di as text "Stage-2 radial recovery: `_adjusted' projection(s) adjusted; original efficiency scores retained."
+    }
+
+    if "`diagnostics_mat'"!="" {
+        mata: st_local("_outside",strofreal(sum(st_matrix("`diagnostics_mat'")[.,6]:==0)))
+        mata: st_local("_unchecked",strofreal(sum((st_matrix("`diagnostics_mat'")[.,4]:==0):&(st_matrix("`diagnostics_mat'")[.,5]:==0))))
+        if `_outside'>0 | `_unchecked'>0 {
+            di as text "Returned projection audit: `_outside' outside tolerance; `_unchecked' not checkable."
+            di as text "Inspect r(numerical_diagnostics); solver status alone is not an exact certificate."
+        }
+    }
 
     _dea_display, model(`model') rts(`rts') orientation(`orientation') ///
         generate(`generate') touse(`touse') ///
@@ -1657,6 +2663,7 @@ program define _dea_model_dispatch, rclass
         lambda_vars(`lambda_vars') ///
         slack_in_vars(`slack_in_vars') ///
         slack_out_vars(`slack_out_vars') ///
+        stage2_status_var(`stage2_status_var') ///
         inputs(`inputs') outputs(`outputs')
 
     // =================================================================
@@ -1664,16 +2671,42 @@ program define _dea_model_dispatch, rclass
     // (mkmat is rclass and resets r(); must save stats first)
     // =================================================================
     local _n_eff_save    = r(n_efficient)
+    local _n_super_save  = r(n_super)
     local _mean_eff_save = r(mean_efficiency)
     local _min_eff_save  = r(min_eff)
     local _max_eff_save  = r(max_eff)
     local _n_failed_save = r(n_failed)
+    local _n_radial_failed_save = r(n_radial_failed)
+    local _n_stage2_failed_save = r(n_stage2_failed)
 
     // =================================================================
     // Return matrices (lambda, slack_in, slack_out)
     // NOTE: return matrix must come BEFORE return add (Stata 16)
     // Tempvars in _dea_model_dispatch scope survive until after return add.
     // =================================================================
+    if "`stage1_status_var'" != "" {
+        tempname _stage_status_mat
+        quietly mkmat `stage1_status_var' `stage2_status_var' if `touse', matrix(`_stage_status_mat')
+        matrix colnames `_stage_status_mat' = radial stage2
+        return matrix stage_status = `_stage_status_mat'
+        tempname _source_mat
+        quietly mkmat `score_source_var' `ref_stage_var' if `touse', matrix(`_source_mat')
+        matrix colnames `_source_mat' = radial reference
+        return matrix solution_source = `_source_mat'
+    }
+    if "`linkage_mat'"!="" {
+        return matrix stage_linkage = `linkage_mat'
+    }
+    if "`diagnostics_mat'"!="" {
+        return matrix numerical_diagnostics = `diagnostics_mat'
+    }
+    if "`ipm_trace_mat'"!="" {
+        return matrix ipm_trace = `ipm_trace_mat'
+    }
+    if `radialtolerance'>0 {
+        return matrix projection = `projection_mat'
+        return matrix projection_trace = `projection_trace_mat'
+    }
     if "`lambda_vars'" != "" {
         tempname _lam_mat
         capture qui mkmat `lambda_vars' if `touse', matrix(`_lam_mat')
@@ -1685,6 +2718,7 @@ program define _dea_model_dispatch, rclass
         tempname _sin_mat
         capture qui mkmat `slack_in_vars' if `touse', matrix(`_sin_mat')
         if _rc == 0 {
+            matrix colnames `_sin_mat' = `inputs'
             return matrix slack_in = `_sin_mat'
         }
     }
@@ -1692,6 +2726,7 @@ program define _dea_model_dispatch, rclass
         tempname _sout_mat
         capture qui mkmat `slack_out_vars' if `touse', matrix(`_sout_mat')
         if _rc == 0 {
+            matrix colnames `_sout_mat' = `outputs'
             return matrix slack_out = `_sout_mat'
         }
     }
@@ -1705,10 +2740,15 @@ program define _dea_model_dispatch, rclass
 
     // Explicitly return display statistics (mkmat may have cleared r())
     return scalar n_efficient     = `_n_eff_save'
+    return scalar n_super         = `_n_super_save'
     return scalar mean_efficiency = `_mean_eff_save'
     return scalar min_eff         = `_min_eff_save'
     return scalar max_eff         = `_max_eff_save'
     return scalar n_failed        = `_n_failed_save'
+    if "`stage1_status_var'" != "" {
+        return scalar n_radial_failed = `_n_radial_failed_save'
+        return scalar n_stage2_failed = `_n_stage2_failed_save'
+    }
 end
 
 
@@ -1726,7 +2766,7 @@ program define _dea_fdh_dispatch, rclass
     // The Mata implementation is loaded from _dea_ipm.ado.
     
     // Ensure Mata functions are loaded
-    capture mata: mata which _dea_fdh()
+    capture mata: assert(findexternal("_dea_fdh()")!=NULL)
     if _rc != 0 {
         capture findfile _dea_ipm.ado
         if _rc == 0 {
@@ -1754,9 +2794,12 @@ program define _dea_fdh_dispatch, rclass
     qui count if `touse'
     local n_dmus = r(N)
     
-    qui count if abs(`generate' - 1) < `tolerance' & `touse'
+    qui count if abs(`generate' - 1) <= `tolerance' & `touse'
     local n_efficient = r(N)
     
+    qui count if `touse' & missing(`generate')
+    local n_failed = r(N)
+
     // Display results
     di as text "{hline 50}"
     di as text "Model: FDH `orientation'"
@@ -1765,9 +2808,12 @@ program define _dea_fdh_dispatch, rclass
         as text " (" %5.1f 100*`n_efficient'/`n_dmus' "%)"
     
     qui sum `generate' if `touse', detail
-    di as text "Mean efficiency:  " as result %9.6f r(mean)
-    di as text "Min efficiency:   " as result %9.6f r(min)
-    di as text "Max efficiency:   " as result %9.6f r(max)
+    local mean_eff = r(mean)
+    local min_eff = r(min)
+    local max_eff = r(max)
+    di as text "Mean efficiency:  " as result %9.6f `mean_eff'
+    di as text "Min efficiency:   " as result %9.6f `min_eff'
+    di as text "Max efficiency:   " as result %9.6f `max_eff'
     di as text "{hline 50}"
     
     // Display DMU results
@@ -1777,6 +2823,14 @@ program define _dea_fdh_dispatch, rclass
     tempvar eff_rounded rank_var
     qui gen double `eff_rounded' = round(`generate', `tolerance') if `touse'
     qui egen `rank_var' = rank(-`eff_rounded') if `touse', track
+
+    // Display data expressions, never expand label contents into Stata syntax.
+    local dmu_text `dmu'
+    capture confirm string variable `dmu'
+    if _rc {
+        tempvar dmu_text
+        quietly gen strL `dmu_text' = strtrim(string(`dmu', "%18.0g")) if `touse'
+    }
     
     preserve
     qui keep if `touse'
@@ -1785,15 +2839,14 @@ program define _dea_fdh_dispatch, rclass
     di as text "{hline 13}{c +}{hline 20}"
     
     forvalues i = 1/`nobs' {
-        local dmu_val = `dmu'[`i']
         local eff_val = `generate'[`i']
         local rank_val = `rank_var'[`i']
-        if "`eff_val'" != "." {
-            di as text %12s "`dmu_val'" " {c |}" ///
+        if !missing(`eff_val') {
+            di as text %12s _asis `dmu_text'[`i'] in smcl " {c |}" ///
                 as result %12.6f `eff_val' %8.0f `rank_val'
         }
         else {
-            di as text %12s "`dmu_val'" " {c |}" ///
+            di as text %12s _asis `dmu_text'[`i'] in smcl " {c |}" ///
                 as result %12s "FAILED" %8s "."
         }
     }
@@ -1803,6 +2856,10 @@ program define _dea_fdh_dispatch, rclass
     // Return values
     return scalar N = `n_dmus'
     return scalar n_efficient = `n_efficient'
+    return scalar mean_efficiency = `mean_eff'
+    return scalar min_eff = `min_eff'
+    return scalar max_eff = `max_eff'
+    return scalar n_failed = `n_failed'
     return local model "fdh"
     return local orientation "`orientation'"
     return add
@@ -1817,18 +2874,18 @@ program define _dea_imprecise_dispatch, rclass
     syntax , Inputs(string) Outputs(string) DMU(varname) ///
         RTS(string) ORIentation(string) STAGE(integer) ///
         ENGINE(string) TOUSE(varname) ///
-        GENerate(name) TOLerance(real) ///
+        GENerate(name) TOLerance(real) IDEAMethod(string) ///
+        [NUMvars(varlist numeric)] [LOWERvars(varlist numeric)] [UPPERvars(varlist numeric)] ///
         [Bounded(varlist)] [ORDinal(varlist)] ///
-        [XLO(varlist numeric)] [XHI(varlist numeric)] ///
-        [YLO(varlist numeric)] [YHI(varlist numeric)] ///
-        [XORD(varlist numeric)] [YORD(varlist numeric)] ///
+        [XLO(varlist)] [XHI(varlist)] ///
+        [YLO(varlist)] [YHI(varlist)] ///
         [TRACE] [DEBUG]
 
     di as text _n "IDEA (Imprecise DEA)"
     di as text "{hline 50}"
     
     // Ensure Mata functions are loaded
-    capture mata: mata which _dea_idea()
+    capture mata: assert(findexternal("_dea_idea()")!=NULL)
     if _rc != 0 {
         capture findfile _dea_ipm.ado
         if _rc == 0 {
@@ -1840,41 +2897,7 @@ program define _dea_imprecise_dispatch, rclass
         }
     }
     
-    // Current IDEA solver uses interval bounds directly. Other imprecise-data
-    // option names are parsed for interface compatibility and future extension.
-    // Validate interval data specification.
-    local m_in : word count `inputs'
-    local m_out : word count `outputs'
-    
-    if "`xlo'" != "" {
-        local n_xlo : word count `xlo'
-        if `n_xlo' != `m_in' {
-            di as error "xlo() must have `m_in' variables (same as inputs)"
-            exit 198
-        }
-    }
-    if "`xhi'" != "" {
-        local n_xhi : word count `xhi'
-        if `n_xhi' != `m_in' {
-            di as error "xhi() must have `m_in' variables (same as inputs)"
-            exit 198
-        }
-    }
-    if "`ylo'" != "" {
-        local n_ylo : word count `ylo'
-        if `n_ylo' != `m_out' {
-            di as error "ylo() must have `m_out' variables (same as outputs)"
-            exit 198
-        }
-    }
-    if "`yhi'" != "" {
-        local n_yhi : word count `yhi'
-        if `n_yhi' != `m_out' {
-            di as error "yhi() must have `m_out' variables (same as outputs)"
-            exit 198
-        }
-    }
-    
+    // The public normalizer validated bounds and selected this path.
     // Create efficiency variables
     tempvar eff_pess eff_opt
     qui gen double `eff_pess' = . if `touse'
@@ -1889,14 +2912,13 @@ program define _dea_imprecise_dispatch, rclass
     // are transformed DMU-by-DMU, then the ordinary DEA model is solved on the
     // transformed data.  The integrated interval solver below handles xlo/xhi
     // and ylo/yhi; this path restores the older bounded/ordinal behavior.
-    if ("`bounded'" != "" | "`ordinal'" != "" | ///
-        "`xord'" != "" | "`yord'" != "") & ///
-       ("`xlo'" == "" & "`xhi'" == "" & "`ylo'" == "" & "`yhi'" == "") {
+    if "`ideamethod'" == "legacy" {
         _dea_imprecise_legacy, inputs(`inputs') outputs(`outputs') ///
             dmu(`dmu') rts(`rts') orientation(`orientation') ///
             stage(`stage') engine(`engine') touse(`touse') ///
             generate(`generate') tolerance(`tolerance') ///
-            bounded(`bounded') ordinal(`ordinal' `xord' `yord') ///
+            bounded(`bounded') ordinal(`ordinal') ///
+            numvars(`numvars') lowervars(`lowervars') uppervars(`uppervars') ///
             `trace' `debug'
         return add
         exit
@@ -1921,19 +2943,25 @@ program define _dea_imprecise_dispatch, rclass
     
     // Also create optimistic variable
     local opt_var = "`generate'_opt"
-    capture drop `opt_var'
+    foreach _drop_output in `opt_var' {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
     qui gen double `opt_var' = `eff_opt' if `touse'
     
     // Count results
     qui count if `touse'
     local n_dmus = r(N)
     
-    qui count if abs(`generate' - 1) < `tolerance' & `touse'
+    qui count if abs(`generate' - 1) <= `tolerance' & `touse'
     local n_eff_pess = r(N)
     
-    qui count if abs(`eff_opt' - 1) < `tolerance' & `touse'
+    qui count if abs(`eff_opt' - 1) <= `tolerance' & `touse'
     local n_eff_opt = r(N)
     
+    qui count if `touse' & missing(`generate', `opt_var')
+    local n_failed = r(N)
+
     // Summary statistics
     qui sum `generate' if `touse', detail
     local mean_pess = r(mean)
@@ -1967,19 +2995,30 @@ program define _dea_imprecise_dispatch, rclass
     di as text "{hline 60}"
     di as text %12s "DMU" " {c |}" %14s "Pessimistic" %14s "Optimistic" %10s "Interval"
     di as text "{hline 13}{c +}{hline 46}"
+
+    // Numeric IDs retain the prior general-format representation.
+    local dmu_text `dmu'
+    capture confirm string variable `dmu'
+    if _rc {
+        tempvar dmu_text
+        quietly gen strL `dmu_text' = strtrim(string(`dmu', "%18.0g")) if `touse'
+    }
     
     preserve
     qui keep if `touse'
     local nobs = _N
     
     forvalues i = 1/`nobs' {
-        local dmu_val = `dmu'[`i']
         local pess_val = `generate'[`i']
         local opt_val = `eff_opt'[`i']
-        if "`pess_val'" != "." & "`opt_val'" != "." {
+        if !missing(`pess_val', `opt_val') {
             local interval = `opt_val' - `pess_val'
-            di as text %12s "`dmu_val'" " {c |}" ///
+            di as text %12s _asis `dmu_text'[`i'] in smcl " {c |}" ///
                 as result %14.6f `pess_val' %14.6f `opt_val' %10.6f `interval'
+        }
+        else {
+            di as text %12s _asis `dmu_text'[`i'] in smcl " {c |}" ///
+                as result %14.6f `pess_val' %14.6f `opt_val' %10s "FAILED"
         }
     }
     di as text "{hline 60}"
@@ -1987,6 +3026,11 @@ program define _dea_imprecise_dispatch, rclass
     
     // Return values
     return scalar N = `n_dmus'
+    return scalar n_efficient = `n_eff_pess'
+    return scalar mean_efficiency = `mean_pess'
+    return scalar min_eff = `min_pess'
+    return scalar max_eff = `max_pess'
+    return scalar n_failed = `n_failed'
     return scalar n_efficient_pess = `n_eff_pess'
     return scalar n_efficient_opt = `n_eff_opt'
     return scalar mean_pess = `mean_pess'
@@ -1997,6 +3041,46 @@ program define _dea_imprecise_dispatch, rclass
     return add
 end
 
+// Parse a bounded model variable without modifying it. The same parser is
+// used by preflight and the legacy worker, so whitespace and numeric notation
+// cannot be accepted at entry and interpreted differently during computation.
+capture program drop _dea_bounded_parse
+program define _dea_bounded_parse
+    version 16.0
+    syntax varname, LOWER(name) UPPER(name) [TOUSE(varname)]
+
+    if "`touse'" == "" {
+        tempvar _all
+        quietly generate byte `_all' = 1
+        local touse "`_all'"
+    }
+    capture confirm numeric variable `varlist'
+    if !_rc {
+        quietly generate double `lower' = `varlist' if `touse'
+        quietly generate double `upper' = `varlist' if `touse'
+    }
+    else {
+        tempvar _text _comma _valid
+        local _number "[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?"
+        local _space "[[:space:]]*"
+        local _pattern "^\[`_space'`_number'`_space',`_space'`_number'`_space'\]$"
+        quietly generate strL `_text' = ustrtrim(`varlist') if `touse'
+        quietly generate byte `_valid' = ustrregexm(`_text', "`_pattern'") if `touse'
+        quietly generate long `_comma' = strpos(`_text', ",") if `touse'
+        quietly generate double `lower' = real(ustrtrim(substr(`_text', 2, `_comma'-2))) ///
+            if `touse' & `_valid'
+        quietly generate double `upper' = real(ustrtrim(substr(`_text', `_comma'+1, ///
+            strlen(`_text')-`_comma'-1))) if `touse' & `_valid'
+    }
+    quietly count if `touse' & (missing(`lower', `upper') | `lower' > `upper')
+    if r(N) {
+        local _invalid = r(N)
+        di as error "bounded() variable `varlist' has invalid values in `_invalid' selected observation(s)"
+        di as error "use [lower,upper] with finite lower <= upper, or nonmissing numeric point bounds"
+        exit 459
+    }
+end
+
 capture program drop _dea_imprecise_legacy
 program define _dea_imprecise_legacy, rclass
     version 16.0
@@ -2004,22 +3088,44 @@ program define _dea_imprecise_legacy, rclass
         RTS(string) ORIentation(string) STAGE(integer) ///
         ENGINE(string) TOUSE(varname) GENerate(name) TOLerance(real) ///
         [Bounded(varlist)] [ORDinal(varlist)] ///
+        [NUMvars(varlist numeric)] [LOWERvars(varlist numeric)] [UPPERvars(varlist numeric)] ///
         [TRACE] [DEBUG]
 
-    tempvar __idea_row
+    tempvar __idea_row __idea_eff __idea_score
+    tempname __idea_cutoff
     qui gen long `__idea_row' = _n
 
     tempfile __idea_base __idea_results __one
 
     preserve
         qui keep if `touse'
-        qui keep `__idea_row' `dmu' `inputs' `outputs' `bounded' `ordinal'
+        qui keep `__idea_row' `dmu' `inputs' `outputs' `bounded' `ordinal' `lowervars' `uppervars'
+        // Freeze all endpoint columns before modifying any model dimension.
+        // A bound source may itself be another input/output being transformed.
+        local __numeric_n : word count `numvars'
+        local __numeric_lo ""
+        local __numeric_hi ""
+        if `__numeric_n' > 0 {
+            forvalues j = 1/`__numeric_n' {
+                local __lo_source : word `j' of `lowervars'
+                local __hi_source : word `j' of `uppervars'
+                tempvar __lo_copy __hi_copy
+                qui gen double `__lo_copy' = `__lo_source'
+                qui gen double `__hi_copy' = `__hi_source'
+                local __numeric_lo `__numeric_lo' `__lo_copy'
+                local __numeric_hi `__numeric_hi' `__hi_copy'
+            }
+        }
+        // Raw endpoint columns are no longer needed. Keep only model data and
+        // the frozen copies so auxiliary names cannot collide with inner DEA
+        // outputs such as CRS_TE during a VRS solve.
+        qui keep `__idea_row' `dmu' `inputs' `outputs' `bounded' `ordinal' `__numeric_lo' `__numeric_hi'
         qui save `__idea_base', replace
 
         clear
         qui set obs 0
         qui gen long `__idea_row' = .
-        qui gen double __idea_eff = .
+        qui gen double `__idea_eff' = .
         qui save `__idea_results', replace
 
         use `__idea_base', clear
@@ -2028,59 +3134,82 @@ program define _dea_imprecise_legacy, rclass
         forvalues dmui = 1/`__n' {
             use `__idea_base', clear
 
-            if "`bounded'" != "" {
-                foreach boundedVar of varlist `bounded' {
-                    capture drop `boundedVar'_2
-                    capture confirm string variable `boundedVar'
-                    if !_rc {
-                        tempvar __comma __lo __hi
-                        qui gen int `__comma' = strpos(`boundedVar', ",")
-                        qui gen double `__lo' = real(strtrim(subinstr(substr(`boundedVar', 2, `__comma' - 2), "[", "", .)))
-                        qui gen double `__hi' = real(strtrim(subinstr(subinstr(substr(`boundedVar', `__comma' + 1, .), "]", "", .), "[", "", .)))
-                        qui drop `boundedVar'
-                        qui gen double `boundedVar' = `__lo'
-                        qui gen double `boundedVar'_2 = `__hi'
+            if `__numeric_n' > 0 {
+                forvalues j = 1/`__numeric_n' {
+                    local __v : word `j' of `numvars'
+                    local __lo : word `j' of `__numeric_lo'
+                    local __hi : word `j' of `__numeric_hi'
+                    // Nominal model variables may have narrower storage types.
+                    qui recast double `__v'
+                    qui replace `__v' = `__lo'
+                    if strpos(" `inputs' ", " `__v' ") {
+                        qui replace `__v' = `__hi' if _n != `dmui'
                     }
                     else {
-                        qui gen double `boundedVar'_2 = `boundedVar'
+                        qui replace `__v' = `__hi' if _n == `dmui'
+                    }
+                }
+            }
+
+            if "`bounded'" != "" {
+                foreach boundedVar of varlist `bounded' {
+                    tempvar __idea_upper
+                    capture confirm string variable `boundedVar'
+                    if !_rc {
+                        tempvar __lo
+                        _dea_bounded_parse `boundedVar', lower(`__lo') upper(`__idea_upper')
+                        qui drop `boundedVar'
+                        qui gen double `boundedVar' = `__lo'
+                    }
+                    else {
+                        qui gen double `__idea_upper' = `boundedVar'
                     }
 
                     if strpos(" `inputs' ", " `boundedVar' ") {
                         // For bounded inputs, the evaluated DMU uses the lower
                         // value and reference DMUs use the upper value.
-                        qui replace `boundedVar' = `boundedVar'_2 if _n != `dmui'
+                        qui replace `boundedVar' = `__idea_upper' if _n != `dmui'
                     }
                     else if strpos(" `outputs' ", " `boundedVar' ") {
                         // For bounded outputs, the evaluated DMU uses the upper
                         // value and reference DMUs use the lower value.
-                        qui replace `boundedVar' = `boundedVar'_2 if _n == `dmui'
+                        qui replace `boundedVar' = `__idea_upper' if _n == `dmui'
                     }
-                    qui drop `boundedVar'_2
+                    qui drop `__idea_upper'
                 }
             }
 
             if "`ordinal'" != "" {
                 foreach ordVar of varlist `ordinal' {
+                    // Keep the evaluated DMU's original value fixed. In-place
+                    // replacement of that row must not change later comparisons.
+                    scalar `__idea_cutoff' = `ordVar'[`dmui']
                     if strpos(" `inputs' ", " `ordVar' ") {
-                        qui replace `ordVar' = . if `ordVar' < `ordVar'[`dmui']
+                        qui replace `ordVar' = . if `ordVar' < scalar(`__idea_cutoff')
                         qui replace `ordVar' = 1 if `ordVar' < .
                         qui replace `ordVar' = _N if `ordVar' == .
                     }
                     else if strpos(" `outputs' ", " `ordVar' ") {
-                        qui replace `ordVar' = . if `ordVar' <= `ordVar'[`dmui']
+                        qui replace `ordVar' = . if `ordVar' <= scalar(`__idea_cutoff')
                         qui replace `ordVar' = 0 if `ordVar' < .
                         qui replace `ordVar' = 1 if `ordVar' == .
                     }
                 }
             }
 
-            capture drop __idea_score
-            quietly dea `inputs' = `outputs', rts(`rts') ort(`orientation') ///
-                stage(`stage') gen(__idea_score) engine(`engine')
+            foreach _drop_output in `__idea_score' {
+                capture confirm variable `_drop_output', exact
+                if !_rc quietly drop `_drop_output'
+            }
+            // Legacy ordinal transformations may create zero-output reference rows.
+            // Keep their historical LP domain separate from public ordinary TE.
+            quietly _dea_run legacy_idea `inputs' = `outputs', rts(`rts') ort(`orientation') ///
+                stage(`stage') gen(`__idea_score') engine(`engine') dmu(`dmu') ///
+                tolerance(`tolerance')
 
             qui keep in `dmui'
-            qui keep `__idea_row' __idea_score
-            qui rename __idea_score __idea_eff
+            qui keep `__idea_row' `__idea_score'
+            qui rename `__idea_score' `__idea_eff'
             qui save `__one', replace
 
             use `__idea_results', clear
@@ -2091,26 +3220,42 @@ program define _dea_imprecise_legacy, rclass
 
     qui merge 1:1 `__idea_row' using `__idea_results', nogen
 
-    capture drop `generate'
-    qui gen double `generate' = __idea_eff if `touse'
+    foreach _drop_output in `generate' {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
+    qui gen double `generate' = `__idea_eff' if `touse'
 
     local opt_var "`generate'_opt"
     local mid_var "`generate'_mid"
-    capture drop `opt_var'
-    capture drop `mid_var'
-    qui gen double `opt_var' = __idea_eff if `touse'
-    qui gen double `mid_var' = __idea_eff if `touse'
+    foreach _drop_output in `opt_var' {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
+    foreach _drop_output in `mid_var' {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
+    qui gen double `opt_var' = `__idea_eff' if `touse'
+    qui gen double `mid_var' = `__idea_eff' if `touse'
 
     qui count if `touse'
     local n_dmus = r(N)
-    qui count if abs(`generate' - 1) < `tolerance' & `touse'
+    qui count if abs(`generate' - 1) <= `tolerance' & `touse'
     local n_eff = r(N)
+    qui count if `touse' & missing(`generate')
+    local n_failed = r(N)
     qui sum `generate' if `touse', detail
     local mean_eff = r(mean)
     local min_eff = r(min)
     local max_eff = r(max)
 
     di as text "Legacy bounded/ordinal IDEA transformation"
+    if "`numvars'" != "" {
+        di as text "Numeric bounded variables: `numvars'"
+        di as text "Lower endpoints: `lowervars'"
+        di as text "Upper endpoints: `uppervars'"
+    }
     if "`bounded'" != "" di as text "Bounded variables: `bounded'"
     if "`ordinal'" != "" di as text "Ordinal variables: `ordinal'"
     di as text "{hline 50}"
@@ -2126,6 +3271,7 @@ program define _dea_imprecise_legacy, rclass
     return scalar mean_efficiency = `mean_eff'
     return scalar min_eff = `min_eff'
     return scalar max_eff = `max_eff'
+    return scalar n_failed = `n_failed'
     return local model "idea_legacy"
     return local orientation "`orientation'"
     return local rts "`rts'"
@@ -2160,17 +3306,18 @@ program define _dea_vrsfrontier, rclass
     qui gen double `rts_type'  = . if `touse'
     qui gen double `lambda_sum' = . if `touse'
 
-    // Call Mata VRS Frontier solver
+    tempname vrs_trace
+    // VRS decomposition uses only radial scores; no slack-maximization LP is needed.
     if "`engine'" == "simplex" {
         quietly mata: _dea_simplex_envelopment("`inputs'", "`outputs'", ///
             "`crs_te'", "`touse'", "`orientation'", "crs", ///
-            `tolerance', "")
+            `tolerance', "", "", "", 1)
         quietly mata: _dea_simplex_envelopment("`inputs'", "`outputs'", ///
             "`vrs_te'", "`touse'", "`orientation'", "vrs", ///
-            `tolerance', "")
+            `tolerance', "", "", "", 1)
         quietly mata: _dea_simplex_envelopment("`inputs'", "`outputs'", ///
             "`drs_te'", "`touse'", "`orientation'", "drs", ///
-            `tolerance', "")
+            `tolerance', "", "", "", 1)
 
         qui replace `scale_eff' = `crs_te' / `vrs_te' ///
             if `touse' & `crs_te' < . & `vrs_te' < . & `vrs_te' > 0
@@ -2185,56 +3332,29 @@ program define _dea_vrsfrontier, rclass
         quietly mata: _dea_ipm_vrsfrontier("`inputs'", "`outputs'", ///
             "`crs_te'", "`vrs_te'", "`drs_te'", ///
             "`scale_eff'", "`rts_type'", "`lambda_sum'", ///
-            "`touse'", "`orientation'", `tolerance')
+            "`touse'", "`orientation'", `tolerance', "`vrs_trace'")
     }
 
     // Count DMUs
     qui count if `touse'
     local n_dmus = r(N)
 
-    // Build result matrix
-    tempname vrsfrontier
-    matrix `vrsfrontier' = J(`n_dmus', 5, 0)
-
-    local i = 0
-    qui levelsof `dmu' if `touse', local(dmu_list)
-    local _dmu_is_string = substr("`: type `dmu''", 1, 3) == "str"
-    foreach d of local dmu_list {
-        local ++i
-        // levelsof returns text in a local even when the source variable is
-        // numeric.  Quote only string identifiers when forming the qualifier.
-        if `_dmu_is_string' {
-            local _dmu_match `"`dmu' == "`d'""'
-        }
-        else {
-            local _dmu_match "`dmu' == `d'"
-        }
-        qui summ `crs_te'   if `_dmu_match' & `touse', meanonly
-        matrix `vrsfrontier'[`i', 1] = r(mean)
-        qui summ `vrs_te'   if `_dmu_match' & `touse', meanonly
-        matrix `vrsfrontier'[`i', 2] = r(mean)
-        qui summ `drs_te'   if `_dmu_match' & `touse', meanonly
-        matrix `vrsfrontier'[`i', 3] = r(mean)
-        qui summ `scale_eff' if `_dmu_match' & `touse', meanonly
-        matrix `vrsfrontier'[`i', 4] = r(mean)
-        qui summ `rts_type'  if `_dmu_match' & `touse', meanonly
-        matrix `vrsfrontier'[`i', 5] = r(mean)
-    }
+    // IDs are display labels, not aggregation keys. Preserve every selected
+    // observation, its missing values, and the order used by r(efficiency).
+    tempname vrsfrontier vrsobs
+    tempvar source_obs
+    quietly generate double `source_obs' = _n if `touse'
+    quietly mkmat `crs_te' `vrs_te' `drs_te' `scale_eff' `rts_type' ///
+        if `touse', matrix(`vrsfrontier')
+    quietly mkmat `source_obs' if `touse', matrix(`vrsobs')
     matrix colnames `vrsfrontier' = CRS_TE VRS_TE DRS_TE SCALE RTS
-
-    // Attempt to set row names from DMU values
-    capture {
-        local rownames ""
-        foreach d of local dmu_list {
-            local rownames `rownames' `d'
-        }
-        matrix rownames `vrsfrontier' = `rownames'
-    }
+    matrix colnames `vrsobs' = obsno
 
     // Display
     di as text _n "VRS Frontier Analysis"
     di as text "{hline 65}"
     di as text "  RTS codes: -1 = DRS, 0 = CRS, 1 = IRS"
+    di as text "  Rows follow the selected observations; r(vrsobs) maps source rows."
     di as text "{hline 65}"
     matrix list `vrsfrontier', noblank nohalf noheader format(%9.6f)
     di as text "{hline 65}"
@@ -2249,7 +3369,10 @@ program define _dea_vrsfrontier, rclass
     di as text "  CRS: `n_crs', DRS: `n_drs', IRS: `n_irs'"
 
     // Generate permanent variables
-    capture drop CRS_TE VRS_TE SCALE RTS_NUM RTS
+    foreach _drop_output in CRS_TE VRS_TE SCALE RTS_NUM RTS {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
     qui gen double CRS_TE = `crs_te' if `touse'
     qui gen double VRS_TE = `vrs_te' if `touse'
     qui gen double SCALE  = `scale_eff' if `touse'
@@ -2266,6 +3389,8 @@ program define _dea_vrsfrontier, rclass
 
     // Return
     return matrix vrsfrontier = `vrsfrontier'
+    return matrix vrsobs = `vrsobs'
+    if "`engine'"!="simplex" return matrix vrs_ipm_trace = `vrs_trace'
     return scalar n_crs = `n_crs'
     return scalar n_drs = `n_drs'
     return scalar n_irs = `n_irs'
@@ -2277,12 +3402,54 @@ end
 * 9. RESULT DISPLAY
 ********************************************************************************
 
+// One score convention for the common model display: DDF/additive scores
+// measure inefficiency; both super-efficiency orientations store larger-is-better
+// scores (output radial super-efficiency has already been inverted to 1/phi).
+program define _dea_score_summary, rclass
+    version 16.0
+    syntax , MODEL(string) SCORE(varname numeric) TOUSE(varname) ///
+        TOLerance(real) RANKvar(name)
+
+    local zero_frontier = inlist("`model'", "ddf", "undesirable", "additive")
+    local super_model = inlist("`model'", "supereff", "supersbm")
+    local frontier = 1-`zero_frontier'
+    tempvar finite boundary rounded
+    quietly gen byte `finite' = `touse' & !missing(`score')
+    quietly gen byte `boundary' = abs(`score'-`frontier')<=`tolerance' if `finite'
+    if `super_model' {
+        quietly count if `finite' & `score'>=1-`tolerance'
+    }
+    else quietly count if `finite' & `boundary'==1
+    local n_efficient=r(N)
+
+    local n_super=.
+    if `super_model' {
+        quietly count if `finite' & `score'>1+`tolerance'
+        local n_super=r(N)
+    }
+    quietly count if `touse' & missing(`score')
+    local n_failed=r(N)
+
+    // Snap only the temporary ranking key to the frontier. Stored scores stay
+    // unchanged. Elsewhere retain the existing tolerance-grid competition ranks.
+    quietly gen double `rounded'=round(`score',`tolerance') if `finite'
+    quietly replace `rounded'=`frontier' if `finite' & `boundary'==1
+    if `zero_frontier' quietly egen double `rankvar'=rank(`rounded') if `finite', track
+    else quietly egen double `rankvar'=rank(-`rounded') if `finite', track
+
+    return scalar n_efficient=`n_efficient'
+    return scalar n_super=`n_super'
+    return scalar n_failed=`n_failed'
+    return scalar zero_frontier=`zero_frontier'
+end
+
 program define _dea_display, rclass
     syntax , MODEL(string) RTS(string) ORIentation(string) ///
         GENerate(name) TOUSE(varname) TOLerance(real) ///
         STAGE(integer) DMU(varname) ///
         [REFerence] [DEBUG] ///
         [lambda_vars(string)] [slack_in_vars(string)] [slack_out_vars(string)] ///
+        [stage2_status_var(string)] ///
         [Inputs(string)] [Outputs(string)] [SBMORT(integer 0)]
 
     // Summary statistics
@@ -2295,35 +3462,30 @@ program define _dea_display, rclass
     qui count if `touse'
     local n_dmus = r(N)
 
-    // Count efficient DMUs (model-dependent)
-    if inlist("`model'", "additive") {
-        qui count if abs(`generate') < `tolerance' & `touse'
+    tempvar rank_var
+    _dea_score_summary, model(`model') score(`generate') touse(`touse') ///
+        tolerance(`tolerance') rankvar(`rank_var')
+    local n_efficient=r(n_efficient)
+    local n_super=r(n_super)
+    local n_failed=r(n_failed)
+    local zero_frontier=r(zero_frontier)
+    local n_radial_failed=`n_failed'
+    local n_stage2_failed=0
+    if "`stage2_status_var'" != "" & `stage' == 2 {
+        quietly count if `touse' & `stage2_status_var'!=0
+        local n_stage2_failed=r(N)
+        quietly count if `touse' & (missing(`generate') | `stage2_status_var'!=0)
+        local n_failed=r(N)
     }
-    else if inlist("`model'", "supereff", "supersbm") {
-        if "`orientation'" == "input" {
-            qui count if `generate' > 1 + `tolerance' & `touse' & !missing(`generate')
-        }
-        else {
-            qui count if `generate' < 1 - `tolerance' & `touse' & !missing(`generate')
-        }
-    }
-    else {
-        qui count if abs(`generate' - 1) < `tolerance' & `touse'
-    }
-    local n_efficient = r(N)
-
-    // Failed DMUs
-    qui count if missing(`generate') & `touse'
-    local n_failed = r(N)
 
     // Display
     di as text _n "DEA Results"
     di as text "{hline 50}"
-    if "`model'" == "sbm" & `sbmort' == 1 {
-        di as text "Model: `rts' input-oriented (sbm)"
+    if inlist("`model'", "sbm", "supersbm") & `sbmort' == 1 {
+        di as text "Model: `rts' input-oriented (`model')"
     }
-    else if "`model'" == "sbm" & `sbmort' == 2 {
-        di as text "Model: `rts' output-oriented (sbm)"
+    else if inlist("`model'", "sbm", "supersbm") & `sbmort' == 2 {
+        di as text "Model: `rts' output-oriented (`model')"
     }
     else if inlist("`model'", "sbm", "supersbm", "profit") {
         di as text "Model: `rts' non-oriented (`model')"
@@ -2335,7 +3497,11 @@ program define _dea_display, rclass
     di as text "DMUs evaluated:  " as result `n_dmus'
     di as text "Efficient DMUs:  " as result `n_efficient' ///
         as text " (" %5.1f 100*`n_efficient'/`n_dmus' "%)"
-    if "`model'" == "additive" {
+    if inlist("`model'", "supereff", "supersbm") {
+        di as text "Strictly super-efficient: " as result `n_super' ///
+            as text " (score > 1 + tolerance)"
+    }
+    if `zero_frontier' {
         di as text "Mean inefficiency:" as result %9.6f `mean_eff'
         di as text "Min inefficiency: " as result %9.6f `min_eff'
         di as text "Max inefficiency: " as result %9.6f `max_eff'
@@ -2347,12 +3513,18 @@ program define _dea_display, rclass
     }
 
     if `n_failed' > 0 {
-        di as error _n "Warning: `n_failed' DMU(s) failed to converge"
+        if "`stage2_status_var'" != "" & `stage' == 2 {
+            di as error _n "Warning: `n_failed' DMU(s) have incomplete requested results"
+            di as text "Radial scores missing: `n_radial_failed'; Stage 2 unavailable: `n_stage2_failed'"
+            di as text "Available radial scores are retained; unavailable projections have missing references and slacks."
+        }
+        else di as error _n "Warning: `n_failed' DMU(s) failed to converge"
     }
     di as text "{hline 50}"
 
     // ---- Tabular DMU-level results ----
-    di as text _n "{bf:DMU Efficiency Scores}"
+    if `zero_frontier' di as text _n "{bf:DMU Inefficiency Scores}"
+    else di as text _n "{bf:DMU Efficiency Scores}"
     di as text "{hline 50}"
 
     // Build a matrix-style result display
@@ -2360,16 +3532,12 @@ program define _dea_display, rclass
     qui count if `touse'
     local nobs = r(N)
 
-    // Rank DMUs by efficiency (descending: Rank 1 = most efficient)
-    // First round to tolerance to handle numerical precision
-    // Use track option: ties get same rank, next rank skips (1, 1, 3 style)
-    tempvar eff_rounded rank_var
-    qui gen double `eff_rounded' = round(`generate', `tolerance') if `touse'
-    if "`model'" == "additive" {
-        qui egen `rank_var' = rank(`eff_rounded') if `touse', track
-    }
-    else {
-        qui egen `rank_var' = rank(-`eff_rounded') if `touse', track
+    // Keep labels in data: quotes/macros/SMCL in an ID are literal display text.
+    local dmu_text `dmu'
+    capture confirm string variable `dmu'
+    if _rc {
+        tempvar dmu_text
+        quietly gen strL `dmu_text' = strtrim(string(`dmu', "%18.0g")) if `touse'
     }
 
     // Show compact list
@@ -2379,15 +3547,14 @@ program define _dea_display, rclass
     di as text "{hline 13}{c +}{hline 20}"
 
     forvalues i = 1/`nobs' {
-        local dmu_val = `dmu'[`i']
         local eff_val = `generate'[`i']
         local rank_val = `rank_var'[`i']
-        if "`eff_val'" != "." {
-            di as text %12s "`dmu_val'" " {c |}" ///
+        if !missing(`generate'[`i']) {
+            di as text %12s _asis `dmu_text'[`i'] in smcl " {c |}" ///
                 as result %12.6f `eff_val' %8.0f `rank_val'
         }
         else {
-            di as text %12s "`dmu_val'" " {c |}" ///
+            di as text %12s _asis `dmu_text'[`i'] in smcl " {c |}" ///
                 as result %12s "FAILED" %8s "."
         }
     }
@@ -2404,35 +3571,30 @@ program define _dea_display, rclass
         local n_obs = _N
 
         forvalues k = 1/`n_obs' {
-            local ref_list ""
             local ref_count = 0
-
-            qui scalar _dmu_k = `dmu'[`k']
-            local dmu_k = _dmu_k
 
             forvalues j = 1/`n_obs' {
                 local lambda_var : word `j' of `lambda_vars'
                 if "`lambda_var'" != "" {
-                    qui scalar _lam_val = `lambda_var'[`k']
-                    local lam_val = _lam_val
+                    local lam_val = `lambda_var'[`k']
                     if `lam_val' > `tolerance' & `lam_val' < . {
-                        qui scalar _dmu_j = `dmu'[`j']
-                        local dmu_j = _dmu_j
                         local ref_count = `ref_count' + 1
+                        if `ref_count' == 1 {
+                            di as text _asis `dmu_text'[`k'] in smcl ": " _continue
+                        }
                         if `ref_count' <= 6 {
-                            local lam_str : display %6.4f `lam_val'
-                            local ref_list "`ref_list' `dmu_j'(`lam_str')"
+                            di as result " " _asis `dmu_text'[`j'] in smcl ///
+                                "(" %6.4f `lam_val' ")" _continue
                         }
                     }
                 }
             }
-            if "`ref_list'" != "" {
-                local suffix ""
+            if `ref_count' > 0 {
                 if `ref_count' > 6 {
                     local more = `ref_count' - 6
-                    local suffix " ... (+`more' more)"
+                    di as text " ... (+`more' more)" _continue
                 }
-                di as text "`dmu_k': " as result "`ref_list'" as text "`suffix'"
+                di as text ""
             }
         }
         restore
@@ -2445,7 +3607,10 @@ program define _dea_display, rclass
     return scalar min_eff         = `min_eff'
     return scalar max_eff         = `max_eff'
     return scalar n_efficient     = `n_efficient'
+    return scalar n_super         = `n_super'
     return scalar n_failed        = `n_failed'
+    return scalar n_radial_failed = `n_radial_failed'
+    return scalar n_stage2_failed = `n_stage2_failed'
 end
 
 
@@ -2456,11 +3621,24 @@ end
 program define _dea_save
     syntax , SAVing(string) Inputs(string) Outputs(string) ///
         DMU(varname) GENerate(name) TOUSE(varname) ///
-        [REPLACE] [REFVARS(varlist numeric)] [WEIGHTVARS(varlist numeric)]
+        [REPLACE] [REFVARS(varlist numeric)] [WEIGHTVARS(varlist numeric)] ///
+        [BOOTVARS(varlist numeric)] [IDEAVARS(varlist numeric)] [PROJECTIONVARS(varlist numeric)] ///
+        [stage_status_mat(name)] [solution_source_mat(name)] [MODELVARS(varlist numeric)]
 
     preserve
     qui keep if `touse'
-    qui keep `dmu' `inputs' `outputs' `generate' `refvars' `weightvars'
+    qui keep `dmu' `inputs' `outputs' `generate' `refvars' `weightvars' `bootvars' `ideavars' `projectionvars' `modelvars'
+    if "`stage_status_mat'"!="" & "`solution_source_mat'"!="" {
+        foreach _sv in _dea_radial_status _dea_stage2_status _dea_score_source _dea_ref_stage {
+            quietly generate byte `_sv' = .
+        }
+        mata: st_store(.,tokens("_dea_radial_status _dea_stage2_status _dea_score_source _dea_ref_stage"), ///
+            (st_matrix("`stage_status_mat'"),st_matrix("`solution_source_mat'")))
+        label variable _dea_radial_status "Radial score: 0 available, 1 missing"
+        label variable _dea_stage2_status "Stage 2: 0 success, positive failure, missing not attempted"
+        label variable _dea_score_source "Radial source: 0 unavailable, 1 primal, 2 dual"
+        label variable _dea_ref_stage "Reference source: 0 unavailable, 1 stage 1, 2 stage 2"
+    }
     qui save "`saving'", `replace'
     restore
     di as text _n "Results saved to: `saving'"
@@ -2472,297 +3650,33 @@ end
 ********************************************************************************
 
 program define _dea_bootstrap, rclass
+    version 16.0
     syntax , Inputs(string) Outputs(string) DMU(varname) ///
-        RTS(string) ORIentation(string) GENerate(name) ///
-        TOUSE(varname) ENGINE(string) ///
-        [ENVars(varlist numeric)] ///
-        [REPS1(integer 100)] [REPS2(integer 2000)] ///
-        [Level(integer 95)] [DEBUG]
+        RTS(string) ORIentation(string) GENerate(name) TOUSE(varname) ///
+        REPS1(integer) Level(real) TOLerance(real) [DEBUG]
 
-    di as text _n "{hline 70}"
-    di as text "Simar-Wilson Bootstrap"
-    di as text "{hline 70}"
-    
-    // Bootstrap uses the efficiency scores already stored in `generate'.
-    // The initial scores may be produced by either simplex or IPM.
-    
-    // Determine algorithm
-    local algorithm = 1
-    if "`envars'" != "" {
-        local algorithm = 2
+    // Output names and sample were validated by the main command before solving.
+    // The shared worker uses the main engine's point scores as its initial values;
+    // all pseudo-frontier LPs use simplex, as in the dedicated command.
+    quietly count if `touse' & (missing(`generate') | `generate'<=0)
+    if r(N) {
+        di as error "bootstrap requires positive, nonmissing radial scores for every selected DMU"
+        exit 498
     }
-    
-    // Count observations
-    qui count if `touse'
-    local n_dmus = r(N)
-    
-    di as text "Algorithm:   " as result `algorithm' as text cond(`algorithm'==1, " (Bias correction only)", " (Two-stage with env. variables)")
-    di as text "DMUs:        " as result `n_dmus'
-    di as text "Inputs:      " as result "`inputs'"
-    di as text "Outputs:     " as result "`outputs'"
-    if "`envars'" != "" {
-        di as text "Env. vars:   " as result "`envars'"
+    foreach suffix in bc bias se lo hi {
+        quietly generate double `generate'_`suffix' = .
     }
-    di as text "Score engine:" as result " `engine'"
-    di as text "Bootstrap 1: " as result `reps1' as text " replications (bias correction)"
-    if `algorithm' == 2 {
-        di as text "Bootstrap 2: " as result `reps2' as text " replications (confidence intervals)"
-    }
-    di as text "Conf. level: " as result `level' "%"
-    di as text "{hline 70}"
-    
-    // =====================================================================
-    // Step 1: Initial DEA efficiency scores (already computed in `generate')
-    // =====================================================================
-    di as text _n "Step 1: Initial DEA efficiency scores"
-    
-    qui sum `generate' if `touse', detail
-    local mean_eff = r(mean)
-    local min_eff = r(min)
-    local max_eff = r(max)
-    di as text "  Mean: " as result %9.6f `mean_eff'
-    di as text "  Min:  " as result %9.6f `min_eff'
-    di as text "  Max:  " as result %9.6f `max_eff'
-    
-    // Store original efficiency scores
-    tempvar eff_orig
-    qui gen double `eff_orig' = `generate' if `touse'
-    
-    // Transform efficiency for bootstrap
-    // Input-oriented: theta in (0,1], use 1/theta >= 1
-    // Output-oriented: phi >= 1 already
-    tempvar eff_trans
-    if "`orientation'" == "input" {
-        qui gen double `eff_trans' = 1 / `generate' if `touse' & `generate' > 0
-    }
-    else {
-        qui gen double `eff_trans' = `generate' if `touse'
-    }
-    
-    // =====================================================================
-    // Algorithm branching
-    // =====================================================================
-    
-    if `algorithm' == 1 {
-        // =================================================================
-        // ALGORITHM 1: Bias correction only (no environmental variables)
-        // Uses smoothed bootstrap with reflection
-        // =================================================================
-        di as text _n "Step 2: Smoothed bootstrap bias correction (Algorithm 1)"
-        
-        // Compute bandwidth using Silverman's rule
-        qui sum `eff_trans' if `touse'
-        local sd_eff = r(sd)
-        local h = 0.9 * `sd_eff' * `n_dmus'^(-0.2)
-        di as text "  Bandwidth (Silverman): " as result %9.6f `h'
-        
-        // Bootstrap accumulator
-        tempvar eff_sum eff_count
-        qui gen double `eff_sum' = 0 if `touse'
-        qui gen double `eff_count' = 0 if `touse'
-        
-        di as text "  Progress: " _continue
-        forvalues b = 1/`reps1' {
-            if mod(`b', 20) == 0 {
-                di as text "." _continue
-            }
-            
-            // Smoothed bootstrap: sample with replacement + kernel noise
-            tempvar idx eff_star noise
-            qui gen long `idx' = ceil(runiform() * `n_dmus') if `touse'
-            qui gen double `noise' = rnormal(0, `h') if `touse'
-            
-            // Get resampled efficiency
-            qui gen double `eff_star' = .
-            forvalues i = 1/`n_dmus' {
-                qui sum `idx' if _n == `i', meanonly
-                local j = r(mean)
-                if `j' >= 1 & `j' <= `n_dmus' {
-                    qui sum `eff_trans' if _n == `j', meanonly
-                    qui replace `eff_star' = r(mean) + `noise' if _n == `i' & `touse'
-                }
-            }
-            
-            // Reflection: if eff* < 1, reflect around 1
-            qui replace `eff_star' = 2 - `eff_star' if `eff_star' < 1 & `touse'
-            qui replace `eff_star' = max(`eff_star', 1.001) if `touse'
-            
-            // Convert back to original scale
-            if "`orientation'" == "input" {
-                qui replace `eff_star' = 1 / `eff_star' if `touse'
-            }
-            
-            // Accumulate
-            qui replace `eff_sum' = `eff_sum' + `eff_star' if `touse'
-            qui replace `eff_count' = `eff_count' + 1 if `touse'
-            
-            drop `idx' `eff_star' `noise'
-        }
-        di as text " done"
-        
-        // Compute bias
-        tempvar eff_boot_mean bias eff_bc
-        qui gen double `eff_boot_mean' = `eff_sum' / `eff_count' if `touse'
-        qui gen double `bias' = `eff_boot_mean' - `eff_orig' if `touse'
-        qui gen double `eff_bc' = `eff_orig' - `bias' if `touse'
-        
-        // Bounds
-        if "`orientation'" == "input" {
-            qui replace `eff_bc' = min(`eff_bc', 1) if `touse'
-            qui replace `eff_bc' = max(`eff_bc', 0.01) if `touse'
-        }
-        else {
-            qui replace `eff_bc' = max(`eff_bc', 1) if `touse'
-        }
-    }
-    else {
-        // =================================================================
-        // ALGORITHM 2: Two-stage with environmental variables
-        // =================================================================
-        di as text _n "Step 2: Truncated regression (Algorithm 2)"
-        
-        // Count environmental variables
-        local n_envars : word count `envars'
-        local min_obs = (`n_envars' + 1) * 3  // Rule of thumb: 3x parameters
-        
-        // Truncated regression: efficiency >= 1 (left-truncated at 1)
-        local use_truncreg = 0
-        capture which truncreg
-        if _rc == 0 & `n_dmus' >= `min_obs' {
-            local use_truncreg = 1
-        }
-        
-        if `use_truncreg' {
-            di as text "  Using truncated regression (lower limit = 1)"
-            qui truncreg `eff_trans' `envars' if `touse', ll(1)
-        }
-        else {
-            if `n_dmus' < `min_obs' {
-                di as text "  Note: Too few observations (`n_dmus' < `min_obs') for truncreg, using OLS"
-            }
-            else {
-                di as text "  Note: truncreg not available, using OLS approximation"
-            }
-            qui regress `eff_trans' `envars' if `touse'
-        }
-        
-        // Store coefficients
-        tempname beta
-        matrix `beta' = e(b)
-        local sigma_hat = e(rmse)
-        if missing(`sigma_hat') local sigma_hat = e(sigma)
-        if missing(`sigma_hat') {
-            qui sum `eff_trans' if `touse'
-            local sigma_hat = r(sd)
-        }
-        
-        di as text "  Sigma (residual SD): " as result %9.6f `sigma_hat'
-        di as text "  Coefficients:"
-        matrix list `beta', noheader
-        
-        // Get predicted values and residuals
-        tempvar xb resid
-        qui predict double `xb' if `touse', xb
-        qui gen double `resid' = `eff_trans' - `xb' if `touse'
-        
-        // Bootstrap bias correction
-        di as text _n "Step 3: Bootstrap bias correction (B1 = `reps1' reps)"
-        
-        tempvar eff_sum eff_count
-        qui gen double `eff_sum' = 0 if `touse'
-        qui gen double `eff_count' = 0 if `touse'
-        
-        di as text "  Progress: " _continue
-        forvalues b = 1/`reps1' {
-            if mod(`b', 20) == 0 {
-                di as text "." _continue
-            }
-            
-            tempvar eps_star eff_star
-            
-            // Resample residuals
-            qui gen double `eps_star' = .
-            forvalues i = 1/`n_dmus' {
-                local j = ceil(runiform() * `n_dmus')
-                qui sum `resid' if _n == `j', meanonly
-                qui replace `eps_star' = r(mean) if _n == `i' & `touse'
-            }
-            
-            // Generate pseudo efficiencies
-            qui gen double `eff_star' = `xb' + `eps_star' if `touse'
-            qui replace `eff_star' = max(`eff_star', 1.001) if `touse'
-            
-            if "`orientation'" == "input" {
-                qui replace `eff_star' = 1 / `eff_star' if `touse'
-            }
-            
-            qui replace `eff_sum' = `eff_sum' + `eff_star' if `touse'
-            qui replace `eff_count' = `eff_count' + 1 if `touse'
-            
-            drop `eps_star' `eff_star'
-        }
-        di as text " done"
-        
-        // Compute bias
-        tempvar eff_boot_mean bias eff_bc
-        qui gen double `eff_boot_mean' = `eff_sum' / `eff_count' if `touse'
-        qui gen double `bias' = `eff_boot_mean' - `eff_orig' if `touse'
-        qui gen double `eff_bc' = `eff_orig' - `bias' if `touse'
-        
-        // Bounds
-        if "`orientation'" == "input" {
-            qui replace `eff_bc' = min(`eff_bc', 1) if `touse'
-            qui replace `eff_bc' = max(`eff_bc', 0.01) if `touse'
-        }
-        else {
-            qui replace `eff_bc' = max(`eff_bc', 1) if `touse'
-        }
-        
-        return matrix beta = `beta'
-        return scalar sigma = `sigma_hat'
-    }
-    
-    // =====================================================================
-    // Store results
-    // =====================================================================
-    local bc_var = "`generate'_bc"
-    local bias_var = "`generate'_bias"
-    
-    capture drop `bc_var'
-    capture drop `bias_var'
-    
-    qui gen double `bc_var' = `eff_bc' if `touse'
-    qui gen double `bias_var' = `bias' if `touse'
-    
-    // Summary
-    di as text _n "{hline 70}"
-    di as text "Bootstrap Results"
-    di as text "{hline 70}"
-    
-    qui sum `generate' if `touse'
-    di as text "Original efficiency:     Mean = " as result %9.6f r(mean) as text ", SD = " as result %9.6f r(sd)
-    
-    qui sum `bc_var' if `touse'
-    di as text "Bias-corrected:          Mean = " as result %9.6f r(mean) as text ", SD = " as result %9.6f r(sd)
-    
-    qui sum `bias_var' if `touse'
-    di as text "Bias:                    Mean = " as result %9.6f r(mean) as text ", SD = " as result %9.6f r(sd)
-    
-    di as text "{hline 70}"
-    di as text "Variables created:"
-    di as text "  `bc_var'    - Bias-corrected efficiency"
-    di as text "  `bias_var'  - Bootstrap bias estimate"
-    di as text "{hline 70}"
-    
-    // Return values
-    return scalar N = `n_dmus'
-    return scalar reps1 = `reps1'
-    return scalar reps2 = `reps2'
-    return scalar level = `level'
-    return scalar algorithm = `algorithm'
-    return local bc_var "`bc_var'"
-    return local bias_var "`bias_var'"
-    return add
+    _dea_bootstrap_core, inputs(`inputs') outputs(`outputs') dmu(`dmu') ///
+        touse(`touse') eff(`generate') initial(`generate') ///
+        bc(`generate'_bc) se(`generate'_se) lo(`generate'_lo) hi(`generate'_hi) ///
+        orientation(`orientation') rts(`rts') reps(`reps1') level(`level') ///
+        tolerance(`tolerance') `debug'
+    quietly replace `generate'_bias = `generate' - `generate'_bc if `touse'
+    label variable `generate'_bc "Bootstrap bias-corrected radial efficiency"
+    label variable `generate'_bias "Bootstrap estimated bias (original - corrected)"
+    label variable `generate'_se "Bootstrap standard error"
+    label variable `generate'_lo "Bootstrap `level'% pivot CI: lower endpoint"
+    label variable `generate'_hi "Bootstrap `level'% pivot CI: upper endpoint"
 end
 
 
@@ -2786,11 +3700,19 @@ program define _dea_ipm_solve, rclass
         [BAD(varlist numeric)] [DIRection(string)] ///
         [REFerence] [SAVERef] [SAVEWeights] ///
         [lambda_vars(string)] ///
+        [slack_in_vars(string)] [slack_out_vars(string)] ///
+        [stage1_status_var(string)] [stage2_status_var(string)] ///
+        [score_source_var(string)] [ref_stage_var(string)] [diagnostics_mat(string)] ///
+        [ipm_trace_mat(string)] ///
+        [RADIALTolerance(real 0)] [projection_mat(string)] [projection_trace_mat(string)] ///
         [weight_in_vars(string)] [weight_out_vars(string)] [weight_u0_var(string)] ///
         [TRACE] [DEBUG] [SBMORT(integer 0)]
 
     // Prepare efficiency variable
-    capture drop `generate'
+    foreach _drop_output in `generate' {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
 
     // Count observations
     qui count if `touse'
@@ -2816,61 +3738,66 @@ program define _dea_ipm_solve, rclass
             rts(`rts') orientation(`orientation') ///
             stage(`stage') tolerance(`tolerance') ///
             lambda_vars(`lambda_vars') ///
+            slack_in_vars(`slack_in_vars') slack_out_vars(`slack_out_vars') ///
+            stage1_status_var(`stage1_status_var') stage2_status_var(`stage2_status_var') ///
+            score_source_var(`score_source_var') ref_stage_var(`ref_stage_var') diagnostics_mat(`diagnostics_mat') ///
+            ipm_trace_mat(`ipm_trace_mat') radialtolerance(`radialtolerance') ///
+            projection_mat(`projection_mat') projection_trace_mat(`projection_trace_mat') ///
             `reference' `debug'
     }
     else if "`model'" == "cost" {
         _dea_ipm_cost, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') w(`w') `debug'
+            rts(`rts') tolerance(`tolerance') w(`w') `debug'
     }
     else if "`model'" == "revenue" {
         _dea_ipm_revenue, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') p(`p') `debug'
+            rts(`rts') tolerance(`tolerance') p(`p') `debug'
     }
     else if "`model'" == "profit" {
         _dea_ipm_profit, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') w(`w') p(`p') `debug'
+            rts(`rts') tolerance(`tolerance') w(`w') p(`p') `debug'
     }
     else if "`model'" == "ddf" {
         _dea_ipm_ddf, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') gx(`gx') gy(`gy') `debug'
+            rts(`rts') tolerance(`tolerance') gx(`gx') gy(`gy') `debug'
     }
     else if "`model'" == "undesirable" {
         _dea_ipm_ddf_undesirable, inputs(`inputs') outputs(`outputs') ///
             bad(`bad') efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') direction(`direction') `debug'
+            rts(`rts') tolerance(`tolerance') direction(`direction') `debug'
     }
     else if "`model'" == "sbm" {
         if `sbmort' == 0 {
             _dea_ipm_sbm, inputs(`inputs') outputs(`outputs') ///
                 efficiency(`efficiency_score') touse(`touse') ///
-                rts(`rts') `debug'
+                rts(`rts') tolerance(`tolerance') `debug'
         }
         else {
             local _sbm_ort_str = cond(`sbmort'==1, "input", "output")
             mata: _dea_ipm_sbm_oriented("`inputs'", "`outputs'", ///
-                "`efficiency_score'", "`touse'", "`rts'", "`_sbm_ort_str'")
+                "`efficiency_score'", "`touse'", "`rts'", "`_sbm_ort_str'", `tolerance')
         }
     }
     else if "`model'" == "additive" {
         _dea_ipm_additive, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') `debug'
+            rts(`rts') tolerance(`tolerance') `debug'
     }
     else if "`model'" == "supereff" {
         _dea_ipm_supereff, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') orientation(`orientation') ///
+            rts(`rts') tolerance(`tolerance') orientation(`orientation') ///
             lambda_vars(`lambda_vars') ///
             `reference' `debug'
     }
     else if "`model'" == "multiplier" {
         _dea_ipm_multiplier, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') orientation(`orientation') ///
+            rts(`rts') tolerance(`tolerance') orientation(`orientation') ///
             `saveweights' m(`m') s(`s') ///
             weight_in_vars(`weight_in_vars') ///
             weight_out_vars(`weight_out_vars') ///
@@ -2880,13 +3807,14 @@ program define _dea_ipm_solve, rclass
     else if "`model'" == "allocative" {
         _dea_ipm_allocative, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') orientation(`orientation') ///
+            rts(`rts') tolerance(`tolerance') orientation(`orientation') ///
             w(`w') p(`p') `debug'
     }
     else if "`model'" == "supersbm" {
+        local _sbm_ort_str = cond(`sbmort'==1, "input", cond(`sbmort'==2, "output", ""))
         _dea_ipm_supersbm, inputs(`inputs') outputs(`outputs') ///
             efficiency(`efficiency_score') touse(`touse') ///
-            rts(`rts') `debug'
+            rts(`rts') tolerance(`tolerance') orientation("`_sbm_ort_str'") `debug'
     }
     else {
         di as error "model(`model') not yet implemented in IPM engine"
@@ -2926,6 +3854,11 @@ program define _dea_ipm_te, rclass
         RTS(string) ORIentation(string) ///
         STAGE(integer) TOLerance(real) ///
         [lambda_vars(string)] ///
+        [slack_in_vars(string)] [slack_out_vars(string)] ///
+        [stage1_status_var(string)] [stage2_status_var(string)] ///
+        [score_source_var(string)] [ref_stage_var(string)] [diagnostics_mat(string)] ///
+        [ipm_trace_mat(string)] ///
+        [RADIALTolerance(real 0)] [projection_mat(string)] [projection_trace_mat(string)] ///
         [REFerence] [DEBUG]
 
     // ---------------------------------------------------------------
@@ -2942,27 +3875,8 @@ program define _dea_ipm_te, rclass
     local m : word count `inputs'
     local s : word count `outputs'
 
-    // Prepare slack variables if Stage 2
-    local slack_in_vars ""
-    local slack_out_vars ""
-    local do_stage2 = 0
-    if `stage' == 2 {
-        local do_stage2 = 1
-        local i = 0
-        foreach v of local inputs {
-            local ++i
-            tempvar si`i'
-            qui gen double `si`i'' = 0 if `touse'
-            local slack_in_vars "`slack_in_vars' `si`i''"
-        }
-        local i = 0
-        foreach v of local outputs {
-            local ++i
-            tempvar so`i'
-            qui gen double `so`i'' = 0 if `touse'
-            local slack_out_vars "`slack_out_vars' `so`i''"
-        }
-    }
+    // Caller-owned slack/status variables survive this wrapper's return.
+    local do_stage2 = (`stage' == 2)
 
     // Call unified envelopment solver
     // Use quietly to suppress LinearProgram warnings during Stage 2
@@ -2970,7 +3884,9 @@ program define _dea_ipm_te, rclass
         "`efficiency'", "`lambda_vars'", ///
         "`slack_in_vars'", "`slack_out_vars'", ///
         "`touse'", "`orientation'", "`rts'", ///
-        `do_stage2', `tolerance')
+        `do_stage2', `tolerance', "`stage1_status_var'", "`stage2_status_var'", "`ipm_trace_mat'", ///
+        `radialtolerance', "`projection_mat'", "`projection_trace_mat'", ///
+        "`score_source_var'", "`ref_stage_var'", "`diagnostics_mat'")
 
     // Store slack variable names for downstream use
     if `do_stage2' {
@@ -2988,7 +3904,7 @@ capture program drop _dea_ipm_cost
 program define _dea_ipm_cost, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) ///
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) ///
         W(varlist numeric) [DEBUG]
     
     // Cost Efficiency: min w'x s.t. production constraints
@@ -3001,7 +3917,7 @@ program define _dea_ipm_cost, rclass
     }
     
     mata: _dea_ipm_cost("`inputs'", "`outputs'", ///
-        "`efficiency'", "`w'", "`touse'", "`rts'")
+        "`efficiency'", "`w'", "`touse'", "`rts'", `tolerance')
     
     return add
 end
@@ -3010,7 +3926,7 @@ capture program drop _dea_ipm_revenue
 program define _dea_ipm_revenue, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) ///
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) ///
         P(varlist numeric) [DEBUG]
     
     // Revenue Efficiency: max p'y s.t. production constraints
@@ -3023,7 +3939,7 @@ program define _dea_ipm_revenue, rclass
     }
     
     mata: _dea_ipm_revenue("`inputs'", "`outputs'", ///
-        "`efficiency'", "`p'", "`touse'", "`rts'")
+        "`efficiency'", "`p'", "`touse'", "`rts'", `tolerance')
     
     return add
 end
@@ -3032,7 +3948,7 @@ capture program drop _dea_ipm_profit
 program define _dea_ipm_profit, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) ///
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) ///
         W(varlist numeric) P(varlist numeric) [DEBUG]
     
     // Profit Efficiency: max p'y - w'x s.t. production constraints
@@ -3046,7 +3962,7 @@ program define _dea_ipm_profit, rclass
     }
     
     mata: _dea_ipm_profit("`inputs'", "`outputs'", ///
-        "`efficiency'", "`w'", "`p'", "`touse'", "`rts'")
+        "`efficiency'", "`w'", "`p'", "`touse'", "`rts'", `tolerance')
     
     return add
 end
@@ -3055,7 +3971,7 @@ capture program drop _dea_ipm_ddf
 program define _dea_ipm_ddf, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) ///
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) ///
         [GX(varlist numeric)] [GY(varlist numeric)] [DEBUG]
     
     // Directional Distance Function
@@ -3070,7 +3986,7 @@ program define _dea_ipm_ddf, rclass
     }
     
     mata: _dea_ipm_ddf("`inputs'", "`outputs'", ///
-        "`efficiency'", "`gx'", "`gy'", "`touse'", "`rts'")
+        "`efficiency'", "`gx'", "`gy'", "`touse'", "`rts'", `tolerance')
 
     return add
 end
@@ -3079,7 +3995,7 @@ capture program drop _dea_ipm_ddf_undesirable
 program define _dea_ipm_ddf_undesirable, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) BAD(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) ///
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) ///
         [DIRection(string) DEBUG]
 
     // DDF with undesirable (bad) outputs — Wang et al. (2022)
@@ -3096,7 +4012,7 @@ program define _dea_ipm_ddf_undesirable, rclass
     }
 
     mata: _dea_ipm_ddf_undesirable("`inputs'", "`outputs'", "`bad'", ///
-        "`efficiency'", "`direction'", "`touse'", "`rts'")
+        "`efficiency'", "`direction'", "`touse'", "`rts'", `tolerance')
 
     return add
 end
@@ -3105,7 +4021,7 @@ capture program drop _dea_ipm_sbm
 program define _dea_ipm_sbm, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) [DEBUG]
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) [DEBUG]
     
     // Slacks-Based Measure (Tone, 2001)
     // Uses Charnes-Cooper transformation
@@ -3136,7 +4052,7 @@ program define _dea_ipm_sbm, rclass
     
     mata: _dea_ipm_sbm("`inputs'", "`outputs'", ///
         "`efficiency'", "`slack_in_vars'", "`slack_out_vars'", ///
-        "`touse'", "`rts'")
+        "`touse'", "`rts'", `tolerance')
     
     return local slack_in_vars "`slack_in_vars'"
     return local slack_out_vars "`slack_out_vars'"
@@ -3147,7 +4063,7 @@ capture program drop _dea_ipm_additive
 program define _dea_ipm_additive, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) [DEBUG]
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) [DEBUG]
     
     // Additive Model: max sum(s-) + sum(s+)
     // Efficiency = 0 if efficient, > 0 if inefficient
@@ -3177,7 +4093,7 @@ program define _dea_ipm_additive, rclass
     
     mata: _dea_ipm_additive("`inputs'", "`outputs'", ///
         "`efficiency'", "`slack_in_vars'", "`slack_out_vars'", ///
-        "`touse'", "`rts'")
+        "`touse'", "`rts'", `tolerance')
     
     return local slack_in_vars "`slack_in_vars'"
     return local slack_out_vars "`slack_out_vars'"
@@ -3188,7 +4104,7 @@ capture program drop _dea_ipm_supereff
 program define _dea_ipm_supereff, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) ///
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) ///
         ORIentation(string) [lambda_vars(string)] [REFerence] [DEBUG]
     
     // Super-efficiency: exclude evaluated DMU from reference set
@@ -3204,7 +4120,7 @@ program define _dea_ipm_supereff, rclass
     
     mata: _dea_ipm_supereff("`inputs'", "`outputs'", ///
         "`efficiency'", "`lambda_vars'", ///
-        "`touse'", "`orientation'", "`rts'")
+        "`touse'", "`orientation'", "`rts'", `tolerance')
     
     return add
 end
@@ -3213,7 +4129,7 @@ capture program drop _dea_ipm_multiplier
 program define _dea_ipm_multiplier, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) ///
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) ///
         ORIentation(string) M(integer) S(integer) ///
         [SAVEWeights] [weight_in_vars(string)] [weight_out_vars(string)] ///
         [weight_u0_var(string)] [DEBUG]
@@ -3253,14 +4169,14 @@ program define _dea_ipm_multiplier, rclass
     if "`saveweights'" != "" {
         mata: _dea_ipm_multiplier("`inputs'", "`outputs'", ///
             "`efficiency'", "`v_vars'", "`u_vars'", "`weight_u0_var'", ///
-            "`touse'", "`orientation'", "`rts'")
+            "`touse'", "`orientation'", "`rts'", `tolerance')
     }
 
     // By strong duality, multiplier efficiency equals the radial
     // envelopment score. Use the envelopment solver for the reported score;
     // multiplier weights, when requested, are retained from the dual LP above.
     mata: _dea_ipm_envelopment("`inputs'", "`outputs'", ///
-        "`efficiency'", "", "", "", "`touse'", "`orientation'", "`rts'", 0, 1e-8)
+        "`efficiency'", "", "", "", "`touse'", "`orientation'", "`rts'", 0, `tolerance')
     
     if "`saveweights'" != "" {
         return local v_vars "`v_vars'"
@@ -3273,7 +4189,7 @@ capture program drop _dea_ipm_allocative
 program define _dea_ipm_allocative, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) ///
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) ///
         ORIentation(string) ///
         [W(varlist numeric)] [P(varlist numeric)] [DEBUG]
     
@@ -3291,7 +4207,7 @@ program define _dea_ipm_allocative, rclass
     qui gen double `te_score' = . if `touse'
     
     mata: _dea_ipm_envelopment("`inputs'", "`outputs'", ///
-        "`te_score'", "", "", "", "`touse'", "`orientation'", "`rts'", 0, 1e-8)
+        "`te_score'", "", "", "", "`touse'", "`orientation'", "`rts'", 0, `tolerance')
     
     // Then compute economic efficiency
     tempvar econ_eff
@@ -3300,12 +4216,12 @@ program define _dea_ipm_allocative, rclass
     if "`orientation'" == "input" & "`w'" != "" {
         // Cost efficiency
         mata: _dea_ipm_cost("`inputs'", "`outputs'", ///
-            "`econ_eff'", "`w'", "`touse'", "`rts'")
+            "`econ_eff'", "`w'", "`touse'", "`rts'", `tolerance')
     }
     else if "`orientation'" == "output" & "`p'" != "" {
         // Revenue efficiency
         mata: _dea_ipm_revenue("`inputs'", "`outputs'", ///
-            "`econ_eff'", "`p'", "`touse'", "`rts'")
+            "`econ_eff'", "`p'", "`touse'", "`rts'", `tolerance')
     }
     else {
         di as error "allocative model requires w() for input orientation or p() for output orientation"
@@ -3322,7 +4238,7 @@ capture program drop _dea_ipm_supersbm
 program define _dea_ipm_supersbm, rclass
     version 16.0
     syntax , Inputs(string) Outputs(string) ///
-        EFFICIENCY(varname) TOUSE(varname) RTS(string) [DEBUG]
+        EFFICIENCY(varname) TOUSE(varname) RTS(string) TOLerance(real) [ORIentation(string) DEBUG]
     
     // Super-efficiency SBM (Tone, 2002)
     // Excludes evaluated DMU from reference set
@@ -3333,7 +4249,7 @@ program define _dea_ipm_supersbm, rclass
     }
     
     mata: _dea_ipm_supersbm("`inputs'", "`outputs'", ///
-        "`efficiency'", "`touse'", "`rts'")
+        "`efficiency'", "`touse'", "`rts'", `tolerance', "`orientation'")
     
     return add
 end
@@ -3357,6 +4273,8 @@ program define _dea_simplex_solve, rclass
         [REFerence] [SAVERef] [SAVEWeights] ///
         [lambda_vars(string)] ///
         [slack_in_vars(string)] [slack_out_vars(string)] ///
+        [stage1_status_var(string)] [stage2_status_var(string)] ///
+        [score_source_var(string)] [ref_stage_var(string)] [diagnostics_mat(string)] [linkage_mat(string)] ///
         [weight_in_vars(string)] [weight_out_vars(string)] [weight_u0_var(string)] ///
         [SBMORT(integer 0)] ///
         [TRACE] [DEBUG]
@@ -3366,9 +4284,11 @@ program define _dea_simplex_solve, rclass
     // =================================================================
     // Check both core and undesirable functions; reload if either is missing
     local _simplex_needs_load 0
-    capture mata: mata which _dea_simplex_envelopment()
+    capture mata: assert(_dea_simplex_audit_ready()==16 & findexternal("_rsm_duplicate_ratio()")!=NULL & findexternal("_rsm_duplicate_map()")!=NULL & findexternal("_rsm_duplicate_problem()")!=NULL & findexternal("_rsm_duplicate_accept()")!=NULL & findexternal("_rsm_duplicate_retry()")!=NULL & findexternal("_rsm_two_phase_core()")!=NULL & findexternal("_rsm_solve_lp()")!=NULL & findexternal("_rsm_quality_fast()")!=NULL & findexternal("_rsm_affine_quality()")!=NULL & findexternal("_rsm_affine_refine()")!=NULL & findexternal("_rsm_success_fastread()")!=NULL & findexternal("_rsm_success_reset()")!=NULL & findexternal("_rsm_success_read()")!=NULL & findexternal("_rsm_success_counts_read()")!=NULL & findexternal("_rsm_success_check()")!=NULL & findexternal("_rsm_success_apply()")!=NULL & findexternal("_rsm_xgrow()")!=NULL & findexternal("_rsm_xadd()")!=NULL & findexternal("_rsm_xmul()")!=NULL & findexternal("_rsm_xnormalize()")!=NULL & findexternal("_rsm_rowmap()")!=NULL & findexternal("_rsm_row_empty()")!=NULL & findexternal("_rsm_row_accept()")!=NULL & findexternal("_rsm_row_retry()")!=NULL & findexternal("_dea_link_reset()")!=NULL & findexternal("_dea_link_read()")!=NULL & findexternal("_dea_link_store()")!=NULL & findexternal("_dea_link_small()")!=NULL & findexternal("_dea_link_residual()")!=NULL & findexternal("_dea_link_basis()")!=NULL & findexternal("_dea_link_apply()")!=NULL & findexternal("_dea_link_stage2()")!=NULL)
     if _rc != 0 local _simplex_needs_load 1
-    capture mata: mata which _dea_simplex_ddf_undesirable()
+    capture mata: assert(findexternal("_dea_simplex_envelopment()")!=NULL)
+    if _rc != 0 local _simplex_needs_load 1
+    capture mata: assert(findexternal("_dea_simplex_ddf_undesirable()")!=NULL)
     if _rc != 0 local _simplex_needs_load 1
     if `_simplex_needs_load' {
         capture findfile _dea_simplex.ado
@@ -3381,10 +4301,19 @@ program define _dea_simplex_solve, rclass
         }
     }
     
+    capture mata: assert(_dea_simplex_audit_ready()==16 & findexternal("_rsm_duplicate_ratio()")!=NULL & findexternal("_rsm_duplicate_map()")!=NULL & findexternal("_rsm_duplicate_problem()")!=NULL & findexternal("_rsm_duplicate_accept()")!=NULL & findexternal("_rsm_duplicate_retry()")!=NULL & findexternal("_rsm_two_phase_core()")!=NULL & findexternal("_rsm_solve_lp()")!=NULL & findexternal("_rsm_quality_fast()")!=NULL & findexternal("_rsm_affine_quality()")!=NULL & findexternal("_rsm_affine_refine()")!=NULL & findexternal("_rsm_success_fastread()")!=NULL & findexternal("_rsm_success_reset()")!=NULL & findexternal("_rsm_success_read()")!=NULL & findexternal("_rsm_success_counts_read()")!=NULL & findexternal("_rsm_success_check()")!=NULL & findexternal("_rsm_success_apply()")!=NULL & findexternal("_rsm_xgrow()")!=NULL & findexternal("_rsm_xadd()")!=NULL & findexternal("_rsm_xmul()")!=NULL & findexternal("_rsm_xnormalize()")!=NULL & findexternal("_rsm_rowmap()")!=NULL & findexternal("_rsm_row_empty()")!=NULL & findexternal("_rsm_row_accept()")!=NULL & findexternal("_rsm_row_retry()")!=NULL & findexternal("_dea_link_reset()")!=NULL & findexternal("_dea_link_read()")!=NULL & findexternal("_dea_link_store()")!=NULL & findexternal("_dea_link_small()")!=NULL & findexternal("_dea_link_residual()")!=NULL & findexternal("_dea_link_basis()")!=NULL & findexternal("_dea_link_apply()")!=NULL & findexternal("_dea_link_stage2()")!=NULL)
+    if _rc {
+        di as error "Incompatible simplex library; reinstall the complete matched DEA package."
+        exit 498
+    }
+
     // =================================================================
     // Create efficiency variable
     // =================================================================
-    capture drop `generate'
+    foreach _drop_output in `generate' {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
     qui gen double `generate' = . if `touse'
     
     if "`debug'" != "" {
@@ -3402,7 +4331,8 @@ program define _dea_simplex_solve, rclass
         // ---------------------------------------------------------
         quietly mata: _dea_simplex_envelopment("`inputs'", "`outputs'", ///
             "`generate'", "`touse'", "`orientation'", "`rts'", ///
-            `tolerance', "`lambda_vars'", "`slack_in_vars'", "`slack_out_vars'")
+            `tolerance', "`lambda_vars'", "`slack_in_vars'", "`slack_out_vars'", `stage', ///
+            "`stage1_status_var'", "`stage2_status_var'", "`score_source_var'", "`ref_stage_var'", "`diagnostics_mat'", "`linkage_mat'")
     }
     else if "`model'" == "multiplier" {
         // ---------------------------------------------------------
@@ -3418,7 +4348,7 @@ program define _dea_simplex_solve, rclass
         }
         else {
             quietly mata: _dea_simplex_envelopment("`inputs'", "`outputs'", ///
-                "`generate'", "`touse'", "`orientation'", "`rts'", `tolerance', "", "", "")
+                "`generate'", "`touse'", "`orientation'", "`rts'", `tolerance', "", "", "", `stage')
         }
     }
     else if "`model'" == "cost" {
@@ -3426,21 +4356,21 @@ program define _dea_simplex_solve, rclass
         // Cost efficiency
         // ---------------------------------------------------------
         quietly mata: _dea_simplex_cost("`inputs'", "`outputs'", ///
-            "`generate'", "`w'", "`touse'", "`rts'")
+            "`generate'", "`w'", "`touse'", "`rts'", `tolerance')
     }
     else if "`model'" == "revenue" {
         // ---------------------------------------------------------
         // Revenue efficiency
         // ---------------------------------------------------------
         quietly mata: _dea_simplex_revenue("`inputs'", "`outputs'", ///
-            "`generate'", "`p'", "`touse'", "`rts'")
+            "`generate'", "`p'", "`touse'", "`rts'", `tolerance')
     }
     else if "`model'" == "profit" {
         // ---------------------------------------------------------
         // Profit efficiency
         // ---------------------------------------------------------
         quietly mata: _dea_simplex_profit("`inputs'", "`outputs'", ///
-            "`generate'", "`w'", "`p'", "`touse'", "`rts'")
+            "`generate'", "`w'", "`p'", "`touse'", "`rts'", `tolerance')
     }
     else if "`model'" == "ddf" {
         // ---------------------------------------------------------
@@ -3449,14 +4379,14 @@ program define _dea_simplex_solve, rclass
         local gx_arg = cond("`gx'" != "", "`gx'", "")
         local gy_arg = cond("`gy'" != "", "`gy'", "")
         quietly mata: _dea_simplex_ddf("`inputs'", "`outputs'", ///
-            "`generate'", "`gx_arg'", "`gy_arg'", "`touse'", "`rts'")
+            "`generate'", "`gx_arg'", "`gy_arg'", "`touse'", "`rts'", `tolerance')
     }
     else if "`model'" == "undesirable" {
         // ---------------------------------------------------------
         // DDF with undesirable (bad) outputs — Wang et al. (2022)
         // ---------------------------------------------------------
         quietly mata: _dea_simplex_ddf_undesirable("`inputs'", "`outputs'", ///
-            "`bad'", "`generate'", "`direction'", "`touse'", "`rts'")
+            "`bad'", "`generate'", "`direction'", "`touse'", "`rts'", `tolerance')
     }
     else if "`model'" == "sbm" {
         // ---------------------------------------------------------
@@ -3465,14 +4395,14 @@ program define _dea_simplex_solve, rclass
         // ---------------------------------------------------------
         local _sbm_ort_str = cond(`sbmort'==1, "input", cond(`sbmort'==2, "output", ""))
         quietly mata: _dea_simplex_sbm("`inputs'", "`outputs'", ///
-            "`generate'", "", "", "`touse'", "`rts'", "`_sbm_ort_str'")
+            "`generate'", "", "", "`touse'", "`rts'", "`_sbm_ort_str'", `tolerance')
     }
     else if "`model'" == "additive" {
         // ---------------------------------------------------------
         // Additive model
         // ---------------------------------------------------------
         quietly mata: _dea_simplex_additive("`inputs'", "`outputs'", ///
-            "`generate'", "", "", "`touse'", "`rts'")
+            "`generate'", "", "", "`touse'", "`rts'", `tolerance')
     }
     else if "`model'" == "supereff" {
         // ---------------------------------------------------------
@@ -3481,14 +4411,15 @@ program define _dea_simplex_solve, rclass
         // ---------------------------------------------------------
         quietly mata: _dea_simplex_supereff("`inputs'", "`outputs'", ///
             "`generate'", "`lambda_vars'", ///
-            "`touse'", "`orientation'", "`rts'")
+            "`touse'", "`orientation'", "`rts'", `tolerance')
     }
     else if "`model'" == "supersbm" {
         // ---------------------------------------------------------
         // Super-efficiency SBM
         // ---------------------------------------------------------
+        local _sbm_ort_str = cond(`sbmort'==1, "input", cond(`sbmort'==2, "output", ""))
         quietly mata: _dea_simplex_supersbm("`inputs'", "`outputs'", ///
-            "`generate'", "`touse'", "`rts'")
+            "`generate'", "`touse'", "`rts'", `tolerance', "`_sbm_ort_str'")
     }
     else if "`model'" == "allocative" {
         // ---------------------------------------------------------
@@ -3498,7 +4429,7 @@ program define _dea_simplex_solve, rclass
         local p_arg = cond("`p'" != "", "`p'", "")
         quietly mata: _dea_simplex_allocative("`inputs'", "`outputs'", ///
             "`generate'", "`touse'", "`orientation'", "`rts'", ///
-            "`w_arg'", "`p_arg'")
+            "`w_arg'", "`p_arg'", `tolerance')
     }
     else {
         di as error "model(`model') is not supported by the Simplex engine"
@@ -3532,10 +4463,9 @@ end
 *     Boston: Kluwer Academic Publishers.
 ********************************************************************************
 //
-// Two-step procedure:
-//   Step 1: Standard VRS DEA → θ_VRS (strong disposability)
-//   Step 2: Congestion model → θ_C  (output equality constraint)
-//   Congestion measure = θ_VRS / θ_C  (< 1 indicates congestion)
+// Historical diagnostic, not the Cooper slack-decomposition algorithm:
+//   standard input VRS theta divided by the input/output-equality theta.
+//   A gap alone neither establishes nor excludes input congestion.
 //
 
 capture program drop _dea_congestion_dispatch
@@ -3554,7 +4484,8 @@ program define _dea_congestion_dispatch, rclass
     // Display header
     // ---------------------------------------------------------------
     di as text "{hline 65}"
-    di as text "Congestion DEA — Cooper, Deng, Seiford & Zhu (2004)"
+    di as text "Congestion diagnostic — legacy equality-restricted radial ratio"
+    di as text "A ratio below 1 is not sufficient to identify input congestion."
     di as text "{hline 65}"
 
     // ---------------------------------------------------------------
@@ -3577,7 +4508,7 @@ program define _dea_congestion_dispatch, rclass
         generate(`_eff_crs') tolerance(`tolerance') `debug'
 
     // ---------------------------------------------------------------
-    // Step 2: Congestion LP (weak input disposability → θ_C)
+    // Step 2: historical input/output-equality LP → theta_C
     //   min θ  s.t.  Xλ = θ·x₀,  Yλ = y₀,  Σλ = 1,  λ ≥ 0
     // ---------------------------------------------------------------
     tempvar _eff_cong
@@ -3596,7 +4527,10 @@ program define _dea_congestion_dispatch, rclass
     local v_se     "`generate'_se"
 
     foreach v in `v_crs' `v_vrs' `v_ceff' `v_cong' `v_se' {
-        capture drop `v'
+        foreach _drop_output in `v' {
+            capture confirm variable `_drop_output', exact
+            if !_rc quietly drop `_drop_output'
+        }
         quietly gen double `v' = . if `touse'
     }
 
@@ -3604,19 +4538,21 @@ program define _dea_congestion_dispatch, rclass
     quietly replace `v_vrs'  = `_eff_vrs'  if `touse'
     quietly replace `v_ceff' = `_eff_cong' if `touse'
 
-    // Congestion measure = θ_VRS / θ_C  (1 = no congestion)
+    // Legacy ratio; one indicates no radial equality-restriction gap.
     quietly replace `v_cong' = `v_vrs' / `v_ceff' ///
-        if `touse' & `v_ceff' > `tolerance'
-    quietly replace `v_cong' = 1 if `touse' & `v_ceff' <= `tolerance'
+        if `touse' & !missing(`v_vrs', `v_ceff') & `v_ceff' > `tolerance'
 
     // Scale efficiency = θ_CRS / θ_VRS
     quietly replace `v_se' = `v_crs' / `v_vrs' ///
-        if `touse' & `v_vrs' > `tolerance'
+        if `touse' & !missing(`v_crs', `v_vrs') & `v_vrs' > `tolerance'
 
-    // Primary generate = congestion measure (1 = efficient, <1 = congested)
-    capture drop `generate'
+    // Primary generate retains the historical ratio, not a congestion certificate.
+    foreach _drop_output in `generate' {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
     quietly gen double `generate' = `v_cong' if `touse'
-    label var `generate' "Congestion measure (θ_VRS/θ_C; <1=congested)"
+    label var `generate' "Legacy equality-restricted ratio (theta_VRS/theta_C)"
 
     // ---------------------------------------------------------------
     // Summary statistics
@@ -3628,10 +4564,33 @@ program define _dea_congestion_dispatch, rclass
     qui count if `v_cong' < (1 - `tolerance') & `touse'
     local n_cong = r(N)
 
+    // Availability of the main ratio and all requested component results.
+    // A CRS-only failure does not erase a usable congestion measure.
+    quietly count if `touse' & !missing(`generate') & abs(`generate'-1)<=`tolerance'
+    local n_eff = r(N)
+    quietly count if `touse' & missing(`generate')
+    local n_failed_primary = r(N)
+    foreach _component in crs vrs ceff se {
+        quietly count if `touse' & missing(`v_`_component'')
+        local n_failed_`_component' = r(N)
+    }
+    quietly count if `touse' & missing(`generate', `v_crs', `v_vrs', `v_ceff', `v_se')
+    local n_failed = r(N)
+    quietly summarize `generate' if `touse'
+    local mean_eff = r(mean)
+    local min_eff = r(min)
+    local max_eff = r(max)
+
     di as text "DMUs evaluated:  " as result `N'
-    di as text "DMUs congested:  " as result `n_cong' ///
-        as text " (congestion measure < 1)"
+    di as text "DMUs with ratio below 1: " as result `n_cong' ///
+        as text " (legacy diagnostic; not a congestion certificate)"
     di as text "Mean VRS eff.:   " as result %8.6f `mean_vrs'
+    if `n_failed' {
+        di as text "Warning: `n_failed' DMU(s) have unavailable requested results."
+        di as text "Missing congestion measures: `n_failed_primary'; missing scale efficiencies: `n_failed_se'."
+        di as text "Missing CRS/VRS/congestion LP scores: `n_failed_crs'/`n_failed_vrs'/`n_failed_ceff'."
+        di as text "Available components are retained; missing results do not imply no congestion."
+    }
     di as text "{hline 65}"
     di as text "Output variables (prefix: `generate'):"
     di as text "  `v_crs'    CRS technical efficiency"
@@ -3644,13 +4603,17 @@ program define _dea_congestion_dispatch, rclass
     return scalar N           = `N'
     return scalar n_congested = `n_cong'
     return scalar mean_vrs    = `mean_vrs'
-    // Standard dea returns
-    qui summ `v_cong' if `touse'
-    return scalar mean_efficiency = r(mean)
-    return scalar n_efficient     = `N' - `n_cong'
-    return scalar min_eff         = r(min)
-    return scalar max_eff         = r(max)
-    return scalar n_failed        = 0
+    // Standard dea returns use finite main scores, independently of auxiliary availability.
+    return scalar mean_efficiency = `mean_eff'
+    return scalar n_efficient     = `n_eff'
+    return scalar min_eff         = `min_eff'
+    return scalar max_eff         = `max_eff'
+    return scalar n_failed        = `n_failed'
+    return scalar n_failed_primary = `n_failed_primary'
+    return scalar n_failed_crs    = `n_failed_crs'
+    return scalar n_failed_vrs    = `n_failed_vrs'
+    return scalar n_failed_cong   = `n_failed_ceff'
+    return scalar n_failed_se     = `n_failed_se'
 end
 
 
@@ -3667,7 +4630,7 @@ end
 //   min  (1 - (1/m)*Σ(s⁻ᵢ/xᵢ₀)) / (1 + (1/(s+b))*(Σ(s⁺ᵣ/yᵣ₀)+Σ(sᵇₖ/bₖ₀)))
 //   s.t. Xλ + s⁻ = x₀
 //        Yλ - s⁺ = y₀  (good outputs: free disposal, ≥)
-//        Bλ + sᵇ = b₀  (bad outputs: weak disposability, =)
+//        Bλ + sᵇ = b₀  (bad outputs: slack balance, B lambda <= b0)
 //        Σλ = 1 (VRS) or unconstrained (CRS)
 //        λ, s⁻, s⁺, sᵇ ≥ 0
 //
@@ -3690,7 +4653,10 @@ program define _dea_sbmundesirable_dispatch, rclass
     di as text "RTS: `rts'    Bad outputs: `nbad'"
 
     // Create efficiency variable
-    capture drop `generate'
+    foreach _drop_output in `generate' {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
     quietly gen double `generate' = . if `touse'
 
     // Call Mata LP
@@ -3704,12 +4670,18 @@ program define _dea_sbmundesirable_dispatch, rclass
     local N = r(N)
     qui summ `generate' if `touse'
     local mean_eff = r(mean)
-    qui count if `generate' >= (1 - `tolerance') & `touse'
+    qui count if `touse' & !missing(`generate') & abs(`generate'-1)<=`tolerance'
     local n_eff = r(N)
+    quietly count if `touse' & missing(`generate')
+    local n_failed = r(N)
 
     di as text "DMUs evaluated:  " as result `N'
     di as text "Efficient DMUs:  " as result `n_eff'
     di as text "Mean efficiency: " as result %8.6f `mean_eff'
+    if `n_failed' {
+        di as text "Warning: `n_failed' DMU(s) have missing SBM-undesirable scores."
+        di as text "Missing scores are excluded from efficiency counts and score summaries."
+    }
     di as text "{hline 65}"
 
     // Standard dea returns
@@ -3719,24 +4691,7 @@ program define _dea_sbmundesirable_dispatch, rclass
     qui summ `generate' if `touse'
     return scalar min_eff  = r(min)
     return scalar max_eff  = r(max)
-    return scalar n_failed = 0
-end
-
-
-********************************************************************************
-* 17. BACKWARD COMPATIBILITY ALIAS
-********************************************************************************
-
-// dea_lp → dea (deprecated alias)
-// Users who type `dea_lp' get redirected to `dea' with a note
-
-capture program drop dea_lp
-program define dea_lp, rclass
-    version 16.0
-    di as text "Note: dea_lp is now integrated into dea v2.0"
-    di as text "      Redirecting to: dea `0'"
-    dea `0'
-    return add
+    return scalar n_failed = `n_failed'
 end
 
 
@@ -3752,9 +4707,9 @@ void _dea_congestion_lp(string scalar inp_names,
                          string scalar outvar)
 {
     real matrix X, Y
-    real scalar n, m, s, k
+    real scalar rc, n, m, s, k
     real colvector scores
-    real rowvector x0, y0, c, lb, ub
+    real rowvector x0, y0, c, lb, ub, xs, ys
     real matrix A_eq
     real colvector b_eq
     class LinearProgram scalar S
@@ -3768,6 +4723,9 @@ void _dea_congestion_lp(string scalar inp_names,
     s = cols(Y)
     obs_idx = selectindex(st_data(., touse))
 
+    xs=colmax(abs(X));xs=xs:+(xs:==0)
+    ys=colmax(abs(Y));ys=ys:+(ys:==0)
+    X=X:/xs;Y=Y:/ys
     scores = J(n, 1, .)
 
     for (k = 1; k <= n; k++) {
@@ -3778,7 +4736,7 @@ void _dea_congestion_lp(string scalar inp_names,
         // Objective: min θ
         c  = (J(1, n, 0), 1)
 
-        // Weak input disposability: Xλ = θ·x₀
+        // Radial input equality: Xλ = θ·x₀
         A_eq   = (X', -x0')
         b_eq   = J(m, 1, 0)
 
@@ -3800,14 +4758,14 @@ void _dea_congestion_lp(string scalar inp_names,
         S.setEquality(A_eq, b_eq)
         S.setBounds(lb, ub)
         S.setTrace("off")
-        (void) S.optimize()
+        rc = _dea_nonte_optimize(S,tol)
 
-        if (S.converged() & S.errorcode() == 0) {
+        if (rc == 0) {
             sol = S.parameters()
             scores[k] = sol[n + 1]
         }
         else {
-            scores[k] = 1   // infeasible → no congestion
+            scores[k] = .   // An unavailable LP result is not evidence of no congestion.
         }
     }
 
@@ -3835,9 +4793,9 @@ void _dea_sbmu_solve(string scalar inp_names,
                       string scalar outvar)
 {
     real matrix X, Y, B
-    real scalar n, m, s, b, k
+    real scalar rc, n, m, s, b, k
     real colvector scores, obs_idx
-    real rowvector x0, y0, b0
+    real rowvector x0, y0, b0, xscale, yscale, bscale
     real rowvector c, lb, ub
     real matrix A_ineq, A_eq
     real colvector b_ineq_v, b_eq_v
@@ -3857,6 +4815,13 @@ void _dea_sbmu_solve(string scalar inp_names,
     b = cols(B)
     obs_idx = selectindex(st_data(., touse))
 
+    // Normalize columns and the corresponding slack units together. Ratios,
+    // t and peer weights are unchanged; tiny positive values remain positive.
+    xscale=colmax(abs(X)); xscale=xscale:+(xscale:==0)
+    yscale=colmax(abs(Y)); yscale=yscale:+(yscale:==0)
+    bscale=colmax(abs(B)); bscale=bscale:+(bscale:==0)
+    X=X:/xscale; Y=Y:/yscale; B=B:/bscale
+
     scores = J(n, 1, .)
 
     // Charnes-Cooper transformation variables (order):
@@ -3874,7 +4839,7 @@ void _dea_sbmu_solve(string scalar inp_names,
         c = J(1, nv, 0)
         c[nv] = 1   // t coefficient
         for (i = 1; i <= m; i++) {
-            if (x0[i] > tol) c[n + i] = -(1/m) / x0[i]
+            if (x0[i] > 0) c[n + i] = -(1/m) / x0[i]
         }
 
         // Equality 1: Xz + S⁻ = t·x₀  →  X·z + I·S⁻ + 0·S⁺ + 0·Sᵇ - x₀·t = 0
@@ -3893,7 +4858,7 @@ void _dea_sbmu_solve(string scalar inp_names,
         A_eq   = A_eq \ Aeq2
         b_eq_v = b_eq_v \ J(s, 1, 0)
 
-        // Equality 3: Bz + Sᵇ = t·b₀  (bad output: weak disposability)
+        // Equality 3: Bz + Sᵇ = t·b₀  (bad output: separable reduction slack)
         Aeq3 = J(b, nv, 0)
         Aeq3[1..b, 1..n]             = B'
         Aeq3[1..b, n+m+s+1..n+m+s+b] = I(b)
@@ -3906,10 +4871,10 @@ void _dea_sbmu_solve(string scalar inp_names,
         Aeq4 = J(1, nv, 0)
         Aeq4[nv] = 1
         for (r = 1; r <= s; r++) {
-            if (y0[r] > tol) Aeq4[n + m + r] = (1/(s+b)) / y0[r]
+            if (y0[r] > 0) Aeq4[n + m + r] = (1/(s+b)) / y0[r]
         }
         for (r = 1; r <= b; r++) {
-            if (b0[r] > tol) Aeq4[n + m + s + r] = (1/(s+b)) / b0[r]
+            if (b0[r] > 0) Aeq4[n + m + s + r] = (1/(s+b)) / b0[r]
         }
         A_eq   = A_eq \ Aeq4
         b_eq_v = b_eq_v \ 1
@@ -3923,9 +4888,14 @@ void _dea_sbmu_solve(string scalar inp_names,
             b_eq_v = b_eq_v \ 0
         }
 
-        // No inequality constraints needed (all equality)
+        // Transformed nonconstant RTS: z=t*lambda; t is not fixed to one.
         A_ineq  = J(0, nv, 0)
         b_ineq_v = J(0, 1, 0)
+        if (rts=="drs" | rts=="irs") {
+            Aeq5=J(1,nv,0);Aeq5[1..n]=J(1,n,1);Aeq5[nv]=-1
+            A_ineq=(rts=="drs" ? Aeq5 : -Aeq5)
+            b_ineq_v=0
+        }
 
         // Bounds: all ≥ 0, t ≥ 0
         lb = J(1, nv, 0)
@@ -3940,9 +4910,9 @@ void _dea_sbmu_solve(string scalar inp_names,
         S.setEquality(A_eq, b_eq_v)
         S.setBounds(lb, ub)
         S.setTrace("off")
-        (void) S.optimize()
+        rc = _dea_nonte_optimize(S,tol)
 
-        if (S.converged() & S.errorcode() == 0) {
+        if (rc == 0) {
             sol = S.parameters()
             theta = S.value()
             scores[k] = theta
@@ -3975,7 +4945,9 @@ void _dea_saveref_plan(string scalar dmu, string scalar touse)
     else ids = strtrim(strofreal(st_data(obs, dmu), "%21.0g"))
     names = J(1, 0, "")
     for (j=1; j<=rows(obs); j++) {
-        base = strtoname("_ref_" + ids[j])
+        // Stata 16 strtoname() can retain a backtick, which is not a valid
+        // variable-name character and is unsafe when passed through a macro.
+        base = strtoname("_ref_" + subinstr(ids[j], char(96), "_"))
         name = base
         serial = 1
         while (any(names :== name)) {

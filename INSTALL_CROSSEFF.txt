@@ -1,0 +1,205 @@
+Cross-efficiency 1.10.0 matched-package installation and verification
+
+Install all 79 files in ado/ together. Nine cross-efficiency helpers are required:
+_dea_crosseff_context.ado, _dea_crosseff_simplex.ado, _dea_crosseff_raw.ado,
+_dea_crosseff_cert.ado, _dea_crosseff_diagnostics.ado,
+_dea_crosseff_objective.ado, _dea_crosseff_exactobjective.ado and
+_dea_crosseff_optima.ado, and _dea_crosseff_cerange.ado.
+Context/certificate, objective/exactobjective and CE-range helpers are 1.0.0;
+raw recovery is 1.0.0; simplex is 1.3.0; diagnostics and optima are 1.1.0.
+The complete inventory is in INSTALL_COOPER.txt. This package uses local-folder
+installation and does not provide net-install metadata.
+
+Use a fresh Stata 16+ session, or save data and clear all before upgrading.
+Put the complete directory first on adopath:
+    adopath ++ "/absolute/path/to/DEA-Stata/ado"
+    which dea_crosseff
+    findfile _dea_crosseff_context.ado
+    findfile _dea_crosseff_simplex.ado
+    findfile _dea_crosseff_raw.ado
+    findfile _dea_crosseff_cert.ado
+    findfile _dea_crosseff_diagnostics.ado
+    findfile _dea_crosseff_objective.ado
+    findfile _dea_crosseff_exactobjective.ado
+    findfile _dea_crosseff_optima.ado
+    findfile _dea_crosseff_cerange.ado
+    findfile dea_crosseff.sthlp
+Internal compatibility readiness: context 57; base certificate 6201;
+diagnostics/objective/exactobjective 7001; simplex/raw recovery 8401;
+optima core 7301;
+CE core 7601; optima and CE adapters 7701. These are ABI checks, not
+version labels or iteration settings. Public diagnostic schemas remain
+6201 (certificate), 6601 (native numerical), 7001 (objective),
+7301 (optimal face), and 7701 (CE range).
+Keep a complete prior package for rollback. Do not mix partial directories.
+
+CROSSEFF_INSTALL_EXAMPLE_BEGIN
+clear
+input double id x y
+1 1 1
+2 2 4
+3 4 2
+end
+dea_crosseff x=y,dmu(id) gen(native) matrix
+assert "`r(actual_engine)'"=="ipm"
+assert r(diagnostic_version)==6201
+dea_crosseff x=y,dmu(id) eng(simplex) method(benevolent) gen(cert) matrix detail
+assert "`r(actual_engine)'"=="simplex"
+assert abs(native_self-cert_self)<1e-8
+assert colsof(r(primary_recovery_diagnostics))==31
+assert r(n_failed_primary)==0
+matrix list r(primary_cert_diagnostics)
+matrix list r(secondary_recovery_diagnostics)
+clear
+input double id x y
+1 1 1
+2 2 2
+end
+dea_crosseff x=y,dmu(id) rts(vrs) method(benevolent) eng(simplex) gen(ray) matrix
+assert r(n_exact_unbounded)>0
+assert r(n_failed_secondary)>0
+assert !missing(ray_self)
+CROSSEFF_INSTALL_EXAMPLE_END
+
+The default engine remains IPM. engine(simplex) uses the numerical primary
+and bounded original-data certificates for benevolent/aggressive selection.
+It requires at most 16 variables after free-variable splitting and 32 selected
+observations. Individual zero quantities/columns are allowed; each selected
+DMU requires a positive input and output.
+
+The secondary uses the original exact primary optimal face. Numerical self
+is preserved; a rounded score is not a new exact RHS. Recovered points must
+pass original-data checks and existing export/self consistency checks.
+A failed secondary retains primary weights. An exact feasible point and
+improving recession direction prove unboundedness; missing numerical values
+or an unverified basis do not prove infeasibility.
+
+Each LP shares 16 exact exchanges,80 million integer-operation work units,
+10 million per check and 128 limbs. The auxiliary LP may use 17 variables.
+Unsupported/resource-limited attempts retain unknown/fallback. These limits
+differ from numerical simplex iterations. Terminal ray inspection uses
+remaining work after unsuccessful recovery and has no extra exchanges.
+Primary-basis acceleration experiments are excluded.
+
+With matrix, primary_recovery_diagnostics and secondary_recovery_diagnostics
+have 31 columns; see help for names and status/reason/stop definitions. Rows
+follow selected observation order. computation_diagnostics gives original
+observation numbers for joining raw DMU IDs and variable flags.
+Per-LP total_steps=original+eq+aux+final<=16;
+total_ops=initial+ray+eq+aux+final. Summary counters aggregate both stages.
+Integer counters exclude numerical LP,ordinary matrix work and final double
+export; they do not measure elapsed time. Ten counters and diagnostic_version
+6201 are returned without matrix. detail prints stage/path/cost summaries.
+Native uses not_evaluated_native scope and does not load the certificate engine
+on a cold call. Normalization-loss diagnostics observe positive-to-zero
+conversion without altering solver inputs or recovering lost quantities.
+Internal exact optimality,rounded weights and numerical self are distinct.
+
+The legacy VRS peer formula and secondary surrogates are unchanged.
+vrscross(limzhu) requires input VRS and changes the peer formula,not the
+secondary objective. Missing ratios remain missing; means use available peers.
+See help for self/peer maverick and diagonal conventions.
+
+Portable regression (Python,NumPy/SciPy,licensed Stata):
+    python tests/test_crosseff_recovery.py --stata /path/to/stata-mp --output /new/output
+This is additional to the existing full 36-suite regression set. It uses private
+observation copies and Fraction checks and does not modify installed files.
+
+Native numerical warnings (1.6.1)
+Both native LP stages check finite coefficient/RHS arrays before optimizer
+setup. A skipped primary remains unavailable; a skipped secondary retains
+primary weights. The command continues other evaluators and warns about
+missing weights/partial peer means. detail identifies original observations;
+matrix returns native_numerical_diagnostics (see help for codes).
+has_numerical_warning and the two n_native_nonfinite_* counts are available
+without matrix. numerical_diagnostic_version is6601; the existing certificate
+diagnostic_version remains6201. Simplex native-state columns are missing.
+No new solution-recovery policy or tolerance/engine switch is introduced.
+Zero warnings is not an exact optimality certificate. This guard cannot
+remove global-scaling loss or make out-of-range normalized weights finite.
+
+Portable preflight/warning regression:
+    python tests/test_crosseff_preflight.py --stata /path/to/stata-mp --output /new/output
+
+Intended peer objectives (1.7.0)
+Exclude the evaluator before summing. Simplex uses exact original binary64
+peer sums for bounded certificates, including rounded numerical proposals.
+Native remains numerical-only and warns when objective representation is
+rounded or loses terms; failed secondary solves retain primary fallback.
+The two branches do not promise identical selected weights. The primary
+score, surrogate definitions, peer-ratio conventions and existing6201/6601
+schemas are preserved. New objective diagnostics use7001. See help and
+tests/CROSSEFF_OBJECTIVE.txt. Install the complete current 79-file ado/
+bundle, including all nine cross-efficiency helpers listed above.
+
+Optional optimal-face diagnostics (1.8.0)
+Add optimadiag to retain the original DEA output and independently diagnose
+F1/F2 actual weight multiplicity and legacy peer denominators. The new helper
+must be installed before requesting the option. Cold default IPM without the
+option still does not load the simplex/exact helper stack. See help for
+dimensions, work limits, unsupported/unknown states and stored-weight linkage.
+optimadiag alone does not compute CE ranges. Add cerange for bounded
+cellwise CE ranges. Mean/rank ranges and a new weight selection policy
+remain separate work.
+Run the self-contained example below after installing all79 runtime/help files.
+
+OPTIMA_INSTALL_EXAMPLE_BEGIN
+clear
+input double id x1 x2 y
+1 1 1 1
+2 2 2 2
+3 3 3 3
+end
+dea_crosseff x1 x2=y,dmu(id) method(benevolent) optimadiag matrix gen(opt)
+assert r(optima_diagnostic_version)==7301
+assert r(n_optima_multiple)==6 & r(n_optima_unknown)==0
+assert r(optima_ce_ranges_available)==0 & r(optima_rank_ranges_available)==0
+matrix list r(optima_faces)
+OPTIMA_INSTALL_EXAMPLE_END
+
+Validation: python tests/test_crosseff_optima.py --stata /path/to/stata-mp --output /new/output
+Optional --baseline-ado /path/to/prior/ado compares prior output against opt-in
+output from this matched installation. See tests/CROSSEFF_OPTIMA.txt.
+
+Optional CE ranges (1.9.0)
+Add cerange (implies optimadiag). Diagnostic schema is7701; the unchanged
+weight-diagnostic schema is7301. CE helper core readiness7601 and adapter7701
+must be installed together with the updated optima adapter7701. Both native
+engines use this independent bounded exact path. Limits:32observations,
+inputs+outputs+2*VRS<=15; legacy peer formula only. Unsupported/unknown and
+unavailable F2 states never substitute a different face. Returned bounds use
+positive denominators; cutoff availability is separate. Read endpoint/display
+and stored-weight link states. No mean/rank range or automatic weight choice.
+
+CROSSEFF_CERANGE_EXAMPLE_BEGIN
+clear
+input double id x1 x2 y
+1 1 1 1
+2 2 2 2
+3 3 3 3
+end
+dea_crosseff x1 x2=y,dmu(id) method(benevolent) cerange matrix gen(ce)
+assert r(cerange_version)==7701 & r(optima_diagnostic_version)==7301
+assert r(n_optima_multiple)==6
+assert r(n_cerange_fixed)==18 & r(n_cerange_variable)==0
+assert r(cerange_mean_ranges_available)==0 & r(cerange_rank_ranges_available)==0
+matrix list r(ce_ranges)
+CROSSEFF_CERANGE_EXAMPLE_END
+
+python tests/test_crosseff_cerange.py --stata /path/to/stata-mp --output /new/output
+The test compares12selected configurations under both native engines with
+frozen independent rational references. See tests/CROSSEFF_CERANGE.txt.
+
+
+Failure-only raw recovery (1.10.0)
+Explicit simplex attempts at most two raw-data representations and one bounded
+exact primary fit after the original numerical primary fails. Only finite,
+raw-checked weights are published. Accepted evaluator weights/self remain
+unchanged. Recovered rows use range-safe legacy CRS/VRS or input Lim-Zhu peers.
+Existing peer means can change because additional evaluator rows are available.
+The LP budgets, native IPM default, peer formulas and selection policy remain
+unchanged. matrix returns raw_recovery_diagnostics, raw_scaling_diagnostics
+and raw_peer_status; raw summary counters are available without matrix.
+Unknown, unbounded, export failure and denominator-policy missing values are
+distinct. No missing primary is replaced by a score of one. The raw diagnostic schema
+is 8401. Run tests/test_crosseff_raw.py for the portable recovery/peer checks.

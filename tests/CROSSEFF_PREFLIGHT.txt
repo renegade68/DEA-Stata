@@ -1,0 +1,31 @@
+Cross-efficiency native preflight/warning regression
+
+Run test_crosseff_preflight.py with licensed Stata16+ and NumPy. The test
+uses a private complete ado copy and exact binary-power CSV input. It never
+modifies installed files. Fixtures are related mathematical constructions,
+not independent empirical datasets.
+
+ray_p512:all original quantities are positive and finite; evaluation around
+the first row overflows an intermediate ratio before final row balancing.
+aggregate_overflow:the primary coefficients are finite but the secondary's
+old total-minus-self sum exceeded Stata's finite range. The peer-only builder
+now scales before summing. It either supplies a finite numerical objective
+or reports primary fallback; no nonfinite objective reaches the optimizer.
+Neither case proves original-data infeasibility.
+
+CRS/VRS,input/output,arbitrary/benevolent/aggressive and actual requested
+1e-4/1e-7/1e-12 are tested,with/without matrix. A read-only private optimizer
+wrapper asserts actual tolerance delivery and counts calls. Invalid arrays
+must stop before that wrapper. Legacy stage-status and weight/self behavior
+are checked. Numerical diagnostic6601 coexists with certificate schema6201.
+Warnings cover detected unavailable stages,partial peer means,scaling loss
+and unverified requested certificates;zero warnings is not a universal proof.
+
+This regression does not enable raw/center reformulation,change tolerances,
+repair normalized-weight representability,or establish a native IPM defect.
+The broader T66 research also compares the operating baseline's completed
+outputs,package/cache/error contracts,and existing portable certificate tests.
+
+Objective diagnostics7001 distinguish build/rounding/exact scope. The old
+aggregate-overflow cases now test the correction rather than requiring a
+secondary nonfinite guard. Primary prepared-array guards remain unchanged.

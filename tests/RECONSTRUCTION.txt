@@ -1,0 +1,44 @@
+Failure-tail original-column reconstruction (04 Nov 2026)
+
+Run from the complete package with NumPy/SciPy and licensed Stata16+:
+ python3 tests/test_reconstruction.py --stata /path/to/stata-mp --output /new/output
+
+Control flow and acceptance
+Every earlier eta/factorized/precision restart, including cycle-gated certified
+pricing, retains priority. After all acceptance checks fail, an observed Phase1
+status3/No stable factorized pivot can enable one further two-path numerical
+retry from the untouched LP. At that blockage, with remaining iteration budget,
+the existing at-most-two QR basis proposals select original columns. Original
+rows and coefficients remain in place. Standard factorized Phase2 and the final
+original-unit primal/dual quality screen must succeed. Failed retries retain
+the prior failure. All repeated iterations are counted; rebuilding is not a
+simplex pivot. No total speedup is promised.
+
+Permanent validation
+The114 packaged conditions include11 original and85 expanded reconstruction
+recoveries,15 later exact-duplicate recoveries, and3 earlier accepted controls.
+All111 recovery witnesses now require exact original constraints and objective6.
+The observed reconstruction-call flag remains separate from duplicate recovery.
+Stored hexadecimal inputs and rational primal/dual witnesses are checked before
+execution. Accepted new recoveries must satisfy the exact original constraints
+and objective6. Duplicate columns permit alternative optimal solutions; existing
+accepted controls preserve their expected results separately.
+Logging OFF/ON and private observation must yield identical numeric outputs.
+Actual once-function iteration sums and a single aggregate record are checked.
+The wide c337 variants at3/129/1024/4090 columns require exact recovery;4091
+columns retain the n+2m>4096 failure. Four injected failures test denied rebuilding,
+unavailable final quality, invalid rebuilt basis, and exhausted Phase1 budget.
+No injection or counters are present in the installed runtime.
+
+Limits
+The396-condition precision suite has396 available results,279 required exact
+recoveries and284 exact primals in the reviewed local result. The e015 accepted
+objective boundary remains. Pricing helper controls still defer438 of1588
+Bland decisions. The124 public wide commands retain6 near rather than exact
+results. These counts overlap and are not a unique problem count.
+In the later exact-duplicate extension, the1215-condition corpus gains388
+exact recoveries (362 duplicate-row/26 duplicate-column variants), while827
+previously accepted outputs remain identical. The15 additional controls here
+overlap those388 and must not be added to them. See DUPLICATE_RECOVERY.txt. This is a finite local result, not a universal feasibility,
+optimality, portability or performance guarantee. The quality4096 boundary and
+finite-range limits remain. Native-IPM and deferred SW2007 work are separate.

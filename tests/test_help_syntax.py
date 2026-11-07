@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Execute literal help examples and public DEA syntax combinations in Stata."""
+from _support import package_files
 import argparse
 import hashlib
 import json
@@ -32,7 +33,7 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     package = out/'ado'
     package.mkdir()
-    tracked = subprocess.check_output(['git', '-C', str(REPO), 'ls-files', 'ado/'], text=True).splitlines()
+    tracked = package_files(REPO)
     hashes = {}
     for name in tracked:
         data = (REPO/name).read_bytes()
@@ -64,11 +65,17 @@ def main():
         example_map[key] = mapping
         cases[key] = '''set obs 2
 gen original_sentinel=991
+scalar _dmu_k=991
+scalar _dmu_j="caller string"
+matrix _lam_val=(1,2\\3,4)
 datasignature
 local signature_before "`r(datasignature)'"
 '''+ '\n'.join(code)+'''
 datasignature
 assert "`signature_before'"=="`r(datasignature)'"
+assert scalar(_dmu_k)==991
+assert scalar(_dmu_j)=="caller string"
+mata: assert(all(st_matrix("_lam_val"):==(1,2\\3,4)))
 '''
 
     # The fuzzy help also has an executable alpha=1 check in Remarks.
@@ -100,7 +107,7 @@ assert "`signature_before'"=="`r(datasignature)'"
 dea x1 x2 = y1 y2 {qualifier}, {opts} generate(control) reference
 matrix C=r(lambda)
 local N0=r(N)
-{command} {opts} generate(eff) {extra} saving("saved results.dta")
+{command} {opts} generate(eff) {extra} saving("saved results.dta") replacevars
 local refs "`r(refvars)'"
 assert r(N)==`N0'
 assert missing(eff)==missing(control)
@@ -148,7 +155,7 @@ assert _rc==111
         for name, opts, canonical in aliases:
             cases[f'alias_{form}_{name}']=DATA+f'''
 dea x1 x2 = y1 y2, dmu(id) {canonical} generate(control)
-{prefix} dmu(id) {opts}
+{prefix} dmu(id) {opts} replacevars
 assert abs(eff-control)<1e-10
 '''
 
@@ -177,7 +184,7 @@ gen gy2=1
         canonical_opts=opts.replace(' saveref','')
         cases['model_forms_'+model]=DATA+setup_prices+f'''
 dea x1 x2 = y1 y2, dmu(id) model({model}) {canonical_opts} generate(control)
-dea y1 y2, inputs(x1 x2) dmu(id) model({model}) {opts} generate(eff) saving("model.dta")
+dea y1 y2, inputs(x1 x2) dmu(id) model({model}) {opts} generate(eff) saving("model.dta") replacevars
 assert missing(eff)==missing(control)
 assert abs(eff-control)<1e-8 if !missing(eff)
 use "model.dta", clear
@@ -221,7 +228,7 @@ confirm variable eff
 '''
     cases['bootstrap_saveref_saving']=DATA+'''
 set seed 12345
-dea y1 y2, inputs(x1 x2) dmu(id) rts(vrs) engine(auto) generate(eff) reference saveref bootstrap reps1(20) saving("bootstrap.dta")
+dea y1 y2, inputs(x1 x2) dmu(id) rts(vrs) engine(auto) generate(eff) reference saveref bootstrap reps1(50) saving("bootstrap.dta")
 local refs "`r(refvars)'"
 matrix L=r(lambda)
 assert !missing(eff)
@@ -232,7 +239,7 @@ mata: assert(max(abs(st_matrix("L")-st_data(.,tokens(st_local("refs")))))<1e-12)
         prefix='dea x1 x2 = y1 y2,' if form=='equal' else 'dea y1 y2, inputs(x1 x2)'
         cases['bootstrap_minimum_'+form]=DATA+f'''
 set seed 12345
-{prefix} dmu(id) generate(eff) boo reps1(20)
+{prefix} dmu(id) generate(eff) boo reps1(50)
 assert !missing(eff)
 '''
     cases['using_conflict']=DATA+'''
@@ -264,7 +271,7 @@ assert _rc==601
             cases[f'invalid_{form}_{name}']=DATA+'''
 datasignature
 local before "`r(datasignature)'"
-'''+f'''capture noisily {prefix} dmu(id) {opts}
+'''+f'''capture noisily {prefix} dmu(id) {opts} replacevars
 assert _rc=={expected}
 datasignature
 assert "`before'"=="`r(datasignature)'"

@@ -1,0 +1,7 @@
+{
+  "scope": "Related positive homogeneous constructions, x=y=2^exponent; self-including primary optimum is one.",
+  "fixtures": [
+    {"name": "ray_p512", "exponents": [-512, -256, 0, 256, 512], "primary_blocked": 1, "secondary_blocked_when_requested": 0},
+    {"name": "aggregate_overflow", "exponents": [-511, 511, 511, 511], "primary_blocked": 0, "secondary_blocked_when_requested": 1}
+  ]
+}

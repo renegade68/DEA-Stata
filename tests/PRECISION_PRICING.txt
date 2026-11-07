@@ -1,0 +1,64 @@
+Certified simplex prices and repeated-state recovery (04 Nov 2026)
+
+Run from a complete package:
+  python3 tests/test_precision_pricing.py --stata /path/to/stata-mp --output /new/output/directory
+Requires NumPy/SciPy and licensed Stata16+. The test uses only packaged sources
+and fixtures. Synthetic helper coefficients include negative costs; positive
+DEA quantity restrictions do not apply to a standalone reduced-cost helper.
+
+Pricing contract
+Stored binary64 inputs are interpreted as exact real numbers. For M=B',
+D=c_B', a computed dual pair has exact value yhat=hi+lo. A computed inverse Z
+is not assumed exact. Bounded arithmetic encloses
+  rho >= ||I-ZM||_infinity,
+  beta >= || |Z| |D-M*yhat| ||_infinity.
+If rho<1, an outward checked division gives delta>=beta/(1-rho), bounding
+||y-yhat||_infinity. Adding delta*||a_j||_1 to the evaluation error of
+c_j-a_j'*yhat encloses the exact reduced cost. Failed/range-limited checks
+return unavailable. The existing standard-form n+2m<=4096 limit is retained.
+
+The existing computed cutoff is unchanged. A strictly negative upper endpoint
+below -cutoff certifies an improving candidate; a lower endpoint >=-cutoff
+certifies nonimprovement under that rule. A straddling interval is deferred.
+Bland does not skip an earlier uncertain candidate. Dantzig selects a computed
+center among certified improving candidates, not a certified globally smallest
+exact price. Neither an unavailable bound nor a straddling interval proves
+optimality. The final original-unit primal/dual quality screen still applies.
+
+Control flow
+Only the failure-only precision path records up to8 recent states in
+Phase2/Bland1: basis indices, basic values, direction, objective, entering
+variable, leaving row and Bland flag. An exact repeat stops that path with
+numerical status3. The established next restart retains priority; any accepted
+solution returns before certified prices are tried. An actual repeated state
+and rejection of all earlier paths are both required for the added retry.
+The problem/phase/restart are fixed, factorized work has no evolving cache,
+and stall/degeneracy counters after Bland1 cannot change the selection rule.
+This does not claim to detect all cycles, long-period cycles, or Phase1 cycles.
+
+Permanent controls
+The1,588 stored pricing cases cover frozen-state cutoff neighbors, cancellation,
+Hilbert matrices, scaling, singular/duplicate bases and exponent limits.
+Python Fraction independently solves each nonsingular basis, checks the dual
+error bound and all price enclosures, and rejects false entering/optimal choices.
+Twelve inputs previously exposed pair-only cutoff misclassification. Baseline
+coverage requires at least1,388 available intervals and1,150 certified Bland
+decisions, so blanket deferral cannot pass the test. Other decisions can defer.
+Seven division controls cover positive fractions and invalid/zero inputs.
+
+Eighteen positive LP controls carry exact primal/dual witnesses with optimum6.
+All18 must return exact primal/score results; three previously unresolved
+controls now use the failure-tail reconstruction path. Seven exercise the added certified path; eleven require it
+to be skipped, including duplicate-column cases solved by the preceding restart.
+Stored expected weights preserve the prior choice among alternative optima.
+Every control runs with logging OFF and ON in both ordinary and instrumented
+copies (72 common calls). The instrumented private copy counts actual pricing
+and retry calls, and its numerical outputs must match. One aggregate recovery
+record per call and the reported iteration sum are checked.
+
+Scope limits
+The existing396-condition precision suite separately requires279 exact
+recoveries and396 available results. These controls do not imply every accepted
+result is exact or that all failures are repaired. Preexisting accepted-objective
+boundary observations require a separate verification/refinement policy.
+No Stata native-IPM implementation or bootstrap inference is changed here.

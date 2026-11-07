@@ -1,0 +1,26 @@
+Cross-efficiency intended peer-objective regression (1.7.0)
+
+Requirements:licensed Stata16+,Python3 andNumPy. Use a new output directory.
+python tests/test_crosseff_objective.py --stata /path/to/stata-mp --output /new/output
+
+The test uses a complete private ado copy. It does not modify installed code.
+56related synthetic objective cases are not independent empirical datasets.
+Every original primary has an independently checked primal/dual witness.
+Secondary equalities select the original primary optimal face; a rounded
+primary objective is not installed as a new RHS.
+
+The exact intended peer cost is reconstructed from signed base2^26 digits
+and its shared binary exponent. It must equal the Fraction sum of original
+peer inputs/outputs after the recorded dyadic variable map. Verified points,
+dual stationarity and objective equality use this exact cost, never only the
+rounded numerical proposal. Work10m/80m,128limbs and16exchanges are checked.
+
+The historical52cases contain48rounded numerical vectors. Four additional
+CRScases have a2^-60peer difference below binary64 aggregate resolution;
+the exact branch must still distinguish the intended secondary optimum.
+
+Native remains numerical-only: tiny objective differences may produce
+different peer scores. Its rounding/loss warning and scope are public, and
+failed secondary solves retain primary weights. No exact-optimality claim,
+automatic engine switch,tolerance increase,score-one imputation or shared
+solver acceleration is introduced by this regression.

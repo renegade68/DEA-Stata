@@ -1,6 +1,8 @@
 {smcl}
+{* Help revision 2026-11-02: missing scores excluded from efficiency counts and reported as failures.}{...}
+{* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 1.0.1  02may2026}{...}
+{* *! version 1.1.0  03nov2026}{...}
 {viewerjumpto "Related article" "dea_sbmundesirable##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_congestion" "help dea_congestion"}{...}
@@ -45,6 +47,13 @@ Form B (extended syntax)
 [{it:options}]
 
 
+{pstd}
+Both forms support {cmd:if} and {cmd:in}. Equality tests such as
+{cmd:if group==1}, quoted strings, and functions such as
+{cmd:if inlist(group,1,2)} are parsed as sample restrictions.
+The restrictions apply to both evaluated observations and the reference data.
+Input and output varlists may use standard variable ranges and wildcards.
+
 {synoptset 28 tabbed}{...}
 {synopthdr}
 {synoptline}
@@ -58,6 +67,7 @@ Form B (extended syntax)
 
 {syntab:Output}
 {synopt:{cmdab:gen:erate(}{it:name}{cmd:)}}name of generated efficiency variable; default is {cmd:sbmu_eff}{p_end}
+{synopt:{cmd:replacevars}}explicitly replace existing result variables; model data and identifiers remain protected{p_end}
 
 {syntab:Technical}
 {synopt:{cmd:dmu(}{it:varname}{cmd:)}}DMU identifier variable{p_end}
@@ -83,8 +93,11 @@ Undesirable outputs --- such as pollutants, waste, or by-products --- cannot
 be treated like regular outputs, because more is not necessarily better.
 Standard DEA models that include bad outputs as ordinary outputs would
 reward DMUs for producing more pollution.
-{cmd:dea_sbmundesirable} handles this by imposing a {it:weak disposability}
-(equality) constraint on bad outputs, reflecting the cost of reducing them.
+{cmd:dea_sbmundesirable} uses a separable bad-output reduction slack. The balance
+B lambda + s^b = b0 with s^b>=0 is equivalent to B lambda<=b0.
+It does not impose proportional joint abatement of good and bad outputs;
+writing this inequality as an equality with a slack does not make it a
+weak-disposability technology. Abatement costs and null-jointness are not imposed.
 
 {pstd}
 The model solves the following fractional program
@@ -98,8 +111,8 @@ min  (1 - (1/m)*Sum(s_i^-/x_i0)) / (1 + (1/(s+b))*(Sum(s_r^+/y_r0) + Sum(s_k^b/b
 {p2colset 9 40 42 2}
 {p2col:{it:X lambda + s^- = x_0}}input constraints{p_end}
 {p2col:{it:Y lambda - s^+ = y_0}}good output constraints (free disposal){p_end}
-{p2col:{it:B lambda + s^b = b_0}}bad output constraints (weak disposability){p_end}
-{p2col:{it:Sum(lambda) = 1}}convexity (VRS only){p_end}
+{p2col:{it:B lambda + s^b = b_0}}bad-output balance with nonnegative reduction slack{p_end}
+{p2col:{it:Sum(lambda)}}1 for VRS, <=1 for NIRS/DRS, >=1 for NDRS/IRS, unrestricted for CRS{p_end}
 {p2col:{it:lambda, s^-, s^+, s^b >= 0}}non-negativity{p_end}
 {p2colreset}{...}
 
@@ -113,6 +126,19 @@ Charnes-Cooper linearization and the Interior Point Method engine.
 {cmd:dea ..., model(sbmundesirable) bad(...)}.
 
 
+{pstd}
+With core {cmd:dea} 2.0.53, unsuccessful LP results remain missing and
+{cmd:r(n_failed)} counts those selected observations. A missing score is
+excluded from {cmd:r(N_eff)} and {cmd:r(n_efficient)}; both require a finite
+score within {cmd:tolerance()} of 1. Mean, minimum and maximum use only
+nonmissing scores and are missing if all scores are unavailable.
+
+{pstd}
+The core {cmd:dea ..., model(sbmundesirable) bad(...) saving(...)} command
+saves the ID, inputs, good outputs, bad outputs and score for all selected
+observations, including rows whose scores are missing. The convenience wrapper
+does not accept {cmd:saving()}.
+
 {marker options}{...}
 {title:Options}
 
@@ -120,14 +146,17 @@ Charnes-Cooper linearization and the Interior Point Method engine.
 
 {phang}
 {cmd:bad(}{it:varlist}{cmd:)} specifies the undesirable (bad) output variables.
-These are treated under weak disposability: reducing bad outputs requires
-proportional reduction in inputs or good outputs.
+Each has its own nonnegative reduction slack. This is the separable
+SBM specification, not a joint-activity abatement model.
 
 {dlgtab:Model}
 
 {phang}
 {cmdab:r:ts(}{it:rtstype}{cmd:)} specifies the returns-to-scale assumption.
-{cmd:crs} (constant, default) or {cmd:vrs} (variable).
+{cmd:crs} (constant, default), {cmd:vrs} (variable),
+{cmd:nirs}/{cmd:drs} (nonincreasing), or {cmd:ndrs}/{cmd:irs} (nondecreasing).
+{cmd:ccr} and {cmd:bcc} alias CRS and VRS. Before core version 2.0.59,
+NIRS/NDRS were accepted but computed as CRS; those earlier results require recomputation.
 
 {dlgtab:Output}
 
@@ -165,14 +194,37 @@ A score below 1 reflects slack in inputs, underproduction of good outputs,
 or overproduction of bad outputs.
 
 {pstd}
+All selected inputs, good outputs and bad outputs must be strictly positive
+because they divide the slack terms. Missing values are excluded with the
+sample selection; selected zero/negative values are rejected before results
+are replaced. There is no silent epsilon replacement or omitted denominator.
+The model is non-oriented: the core {cmd:orientation()} and {cmd:stage()}
+options do not change this objective or single LP. Both engine routes use
+Stata {cmd:LinearProgram()}. Separate input/output SBM variants are not provided
+by this command.
+
+{pstd}
 The Charnes-Cooper linearization transforms the fractional program into
 a linear program by substituting {it:t = 1/denominator} and
-{it:z = t * lambda}.  The model requires Stata 16 or later.
+{it:z = t * lambda}. Consequently the RTS restrictions become
+sum(z)=t, sum(z)<=t or sum(z)>=t; they must not fix sum(z) to 1.  The model requires Stata 16 or later.
 
 {pstd}
 For the DDF-based approach to undesirable outputs, see
 {cmd:dea model(undesirable)} in {helpb dea}.
 
+
+{pstd}
+{bf:Protecting existing data.} All output names are checked before results are
+created. An existing result variable causes an error unless {cmd:replacevars}
+is specified. The option applies only to variables produced by the current
+command; it does not remove other variables sharing the prefix. Replacement
+recreates whole result columns, including their storage types and labels;
+observations not scored by the command do not retain old scores. Variables
+used as model data or identifiers cannot be replaced, even with
+{cmd:replacevars}. Invalid or duplicate output names are rejected before any
+existing result column is changed. This name check does not promise rollback
+of later computation or file-write errors.
 
 {marker examples}{...}
 {title:Examples}
@@ -205,7 +257,7 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 
 {pstd}VRS assumption
 
-{phang2}{cmd:. dea_sbmundesirable capital labor fuel = electricity, bad(so2) rts(vrs) dmu(plant)}{p_end}
+{phang2}{cmd:. dea_sbmundesirable capital labor fuel = electricity, bad(so2) rts(vrs) dmu(plant) replacevars}{p_end}
 
 {pstd}Form B syntax with custom variable name
 
@@ -219,6 +271,21 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 
 
 
+{pstd}Equivalent sample restrictions in both syntax forms
+
+{phang2}{cmd:. dea_sbmundesirable capital labor fuel = electricity if inrange(_n,2,5), bad(so2) dmu(plant) generate(qa)}{p_end}
+{phang2}{cmd:. dea_sbmundesirable if inrange(_n,2,5), inputs(capital labor fuel) outputs(electricity) bad(so2) dmu(plant) generate(qb)}{p_end}
+{phang2}{cmd:. assert qa==qb}{p_end}
+
+
+{pstd}Documented minimum option abbreviations
+
+{phang2}{cmd:. dea_sbmundesirable, inputs(capital labor fuel) outputs(electricity) bad(so2) dmu(plant) rts(vrs) generate(fullopt)}{p_end}
+{phang2}{cmd:. dea_sbmundesirable, in(capital labor fuel) out(electricity) bad(so2) dmu(plant) r(vrs) gen(shortopt)}{p_end}
+{phang2}{cmd:. assert fullopt==shortopt}{p_end}
+
+{phang2}{cmd:. dea_sbmundesirable capital labor fuel = electricity, bad(so2) rts(nirs) dmu(plant) generate(nirs_eff)}{p_end}
+
 {phang2}{cmd:. restore}{p_end}
 {* DEAS_HELP_EXAMPLES_END}{...}
 
@@ -230,7 +297,8 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 
 {synoptset 22 tabbed}{...}
 {syntab:Scalars}
-{synopt:{cmd:r(N)}}number of DMUs{p_end}
+{synopt:{cmd:r(N)}}number of selected DMUs, including failed solves{p_end}
+{synopt:{cmd:r(n_failed)}}selected DMUs with missing scores{p_end}
 {synopt:{cmd:r(N_eff)}}number of efficient DMUs, inherited from {cmd:dea}{p_end}
 {synopt:{cmd:r(mean_eff)}}mean efficiency score, inherited from {cmd:dea}{p_end}
 {synopt:{cmd:r(n_efficient)}}number of efficient DMUs (score = 1){p_end}
@@ -239,6 +307,11 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 {synopt:{cmd:r(max_eff)}}maximum efficiency score{p_end}
 {p2colreset}{...}
 
+
+{pstd}
+{cmd:r(formulation)} is {cmd:separable_bad_sbm}, {cmd:r(lp_backend)} is
+{cmd:stata_linearprogram}, and {cmd:r(orientation)} is {cmd:non-oriented}.
+{cmd:r(orientation_requested)} retains the parsed request.
 
 {marker references}{...}
 {title:References}

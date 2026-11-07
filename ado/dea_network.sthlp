@@ -1,6 +1,7 @@
 {smcl}
+{* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 1.1.2  03may2026}{...}
+{* *! version 1.2.0  02nov2026}{...}
 {viewerjumpto "Related article" "dea_network##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_bootstrap" "help dea_bootstrap"}{...}
@@ -48,6 +49,19 @@ Form B (extended syntax)
 [{it:options}]
 
 
+{pstd}
+Both forms support {cmd:if} and {cmd:in}. Equality tests such as
+{cmd:if group==1}, quoted strings, and functions such as
+{cmd:if inlist(group,1,2)} are parsed as sample restrictions.
+The restrictions apply to both evaluated observations and the reference data.
+Input and output varlists may use standard variable ranges and wildcards.
+
+{pstd}
+For compatibility, output variables may also precede {cmd:if}/{cmd:in}, with
+{cmd:inputs()} after the comma. If that positional varlist is omitted,
+{cmd:outputs()} is required; unrelated variables are not inferred as outputs.
+Input and output variables must be numeric; {cmd:dmu()} may be a string.
+
 {synoptset 28 tabbed}{...}
 {synopthdr}
 {synoptline}
@@ -65,10 +79,12 @@ Form B (extended syntax)
 
 {syntab:Output}
 {synopt:{cmdab:gen:erate(}{it:prefix}{cmd:)}}prefix for generated efficiency variables; default is {cmd:_net_eff}{p_end}
-{synopt:{cmd:detail}}accepted for compatibility; stage-by-stage results are displayed by default{p_end}
+{synopt:{cmd:replacevars}}explicitly replace existing result variables; model data and identifiers remain protected{p_end}
+{synopt:{cmd:detail}}show component availability and decomposition status{p_end}
+{synopt:{cmdab:mat:rix}}return component, status, weight or reference matrices{p_end}
 
 {syntab:Technical}
-{synopt:{cmdab:tol:erance(}{it:#}{cmd:)}}numerical tolerance; default is {cmd:1e-7}{p_end}
+{synopt:{cmdab:tol:erance(}{it:#}{cmd:)}}positive finite LP residual tolerance; default is {cmd:1e-7}{p_end}
 {synopt:{cmd:debug}}display debugging information{p_end}
 {synoptline}
 {p2colreset}{...}
@@ -156,8 +172,11 @@ overall = Stage1 {it:x} Stage2{p_end}
 Default is {cmd:_net_eff}.
 
 {phang}
-{cmd:detail} is accepted for compatibility; stage-level output for each DMU is
-displayed by default.
+{cmd:detail} adds component availability and decomposition status to the score table.
+
+{phang}
+{cmd:matrix} returns matrices described below. Rows follow the selected observation
+order. Multiplier weights are expressed in the original variable units.
 
 
 {marker remarks}{...}
@@ -178,18 +197,59 @@ for CRS input-oriented two-stage systems.  The same multipliers on intermediate
 measures are used as Stage 1 output weights and Stage 2 input weights, and the
 reported decomposition satisfies
 E{sub:overall} = E{sub:1} {it:x} E{sub:2}.  For VRS or output-oriented calls,
-the command retains the legacy stage-wise fallback.
+the command retains the legacy independent-stage product and prints a notice.
+{cmd:r(formulation)} identifies the actual model; {cmd:r(legacy_fallback)} is 1
+for this option combination. It is not a shared-weight VRS or output network model.
 
 {pstd}
-The {cmd:additive} method assigns equal weight to each stage.
+The {cmd:additive} method averages two independently optimized stage scores.
+It is not the linked additive network DEA model in the literature.
 The {cmd:independent} method is equivalent to solving two separate
 standard DEA problems and taking the product, with no linking constraint
 on the intermediate products.
 
 {pstd}
+For the relational model, nonnegative (v,w,u) satisfy wZ <= vX and uY <= wZ
+for every selected reference DMU. The command first maximizes uY at vX=1,
+then holds that system optimum fixed and maximizes wZ. Thus the secondary
+choice favors Stage 1 among alternative optimal decompositions. If that
+secondary LP is unavailable, accepted primary weights are retained and the
+fallback is reported. Stage ratios are computed from those weights; an
+undefined zero denominator remains missing. The system score can remain
+available when a component is undefined.
+
+{pstd}
+All quantities must be nonnegative. Every selected observation must have at
+least one positive variable in each of X, Z, and Y. Missing quantities or an
+explicitly missing DMU identifier are excluded before validation. The selected
+sample is also the reference sample. An empty sample returns error 2000.
+Invalid tolerance or data are rejected before existing results are replaced.
+
+{pstd}
+Column and constraint scaling preserve the specified LP. Native solutions must
+converge and satisfy the submitted constraints and bounds at the requested
+tolerance; relational LPs use an internal convergence cap of 1e-12 and independent
+stages use 1e-8, always no larger than the requested tolerance. This is a
+numerical acceptance test, not an exact optimality or infeasibility certificate.
+Scores are not clipped to [0,1]. Independent output-oriented stages report
+1/phi. A failed stage remains missing while an available stage is retained.
+
+{pstd}
 All models are estimated using the Interior Point Method engine via
 Stata's {cmd:LinearProgram()} class, requiring Stata 16 or later.
 
+
+{pstd}
+{bf:Protecting existing data.} All output names are checked before results are
+created. An existing result variable causes an error unless {cmd:replacevars}
+is specified. The option applies only to variables produced by the current
+command; it does not remove other variables sharing the prefix. Replacement
+recreates whole result columns, including their storage types and labels;
+observations not scored by the command do not retain old scores. Variables
+used as model data or identifiers cannot be replaced, even with
+{cmd:replacevars}. Invalid or duplicate output names are rejected before any
+existing result column is changed. This name check does not promise rollback
+of later computation or file-write errors.
 
 {marker examples}{...}
 {title:Examples}
@@ -223,11 +283,11 @@ which are then converted into interest income (Stage 2).
 
 {pstd}Form B syntax with explicit options
 
-{phang2}{cmd:. dea_network, inputs(deposits) intermediates(loans) outputs(interest_income) dmu(bankid) rts(vrs) method(multiplicative)}{p_end}
+{phang2}{cmd:. dea_network, inputs(deposits) intermediates(loans) outputs(interest_income) dmu(bankid) rts(vrs) method(multiplicative) replacevars}{p_end}
 
 {pstd}Multiple inputs and intermediates
 
-{phang2}{cmd:. dea_network deposits staff = profit, intermediates(loans nonloans) dmu(bankid) method(additive)}{p_end}
+{phang2}{cmd:. dea_network deposits staff = profit, intermediates(loans nonloans) dmu(bankid) method(additive) replacevars}{p_end}
 
 {pstd}Save results with custom prefix
 
@@ -235,6 +295,24 @@ which are then converted into interest income (Stage 2).
 {phang2}{cmd:. list bankid bank_stage1 bank_stage2 bank_overall}{p_end}
 
 
+
+{pstd}Equivalent sample restrictions in both syntax forms
+
+{phang2}{cmd:. dea_network deposits = interest_income if inrange(_n,2,5), intermediates(loans) dmu(bankid) generate(qa)}{p_end}
+{phang2}{cmd:. dea_network if inrange(_n,2,5), inputs(deposits) outputs(interest_income) intermediates(loans) dmu(bankid) generate(qb)}{p_end}
+{phang2}{cmd:. assert qa_overall==qb_overall}{p_end}
+
+
+{pstd}Documented minimum option abbreviations
+
+{phang2}{cmd:. dea_network, inputs(deposits) outputs(interest_income) intermediates(loans) dmu(bankid) rts(vrs) orientation(output) generate(fullopt)}{p_end}
+{phang2}{cmd:. dea_network, in(deposits) out(interest_income) int(loans) dmu(bankid) r(vrs) or(output) gen(shortopt)}{p_end}
+{phang2}{cmd:. assert fullopt_overall==shortopt_overall}{p_end}
+
+{pstd}Inspect shared weights and decomposition status (CRS/input){p_end}
+{phang2}{cmd:. dea_network deposits staff = profit, intermediates(loans nonloans) dmu(bankid) generate(linked) matrix detail}{p_end}
+{phang2}{cmd:. matrix list r(weights_intermediate)}{p_end}
+{phang2}{cmd:. matrix list r(decomposition_status)}{p_end}
 
 {phang2}{cmd:. restore}{p_end}
 {* DEAS_HELP_EXAMPLES_END}{...}
@@ -248,16 +326,34 @@ which are then converted into interest income (Stage 2).
 {synoptset 22 tabbed}{...}
 {syntab:Scalars}
 {synopt:{cmd:r(n)}}number of DMUs{p_end}
+{synopt:{cmd:r(tolerance)}}requested residual tolerance{p_end}
+{synopt:{cmd:r(n_failed_overall)}}missing overall scores{p_end}
+{synopt:{cmd:r(n_failed_stage1)}}missing Stage 1 scores{p_end}
+{synopt:{cmd:r(n_failed_stage2)}}missing Stage 2 scores{p_end}
+{synopt:{cmd:r(n_decomp_fallback)}}relational secondary failures using primary weights{p_end}
+{synopt:{cmd:r(legacy_fallback)}}1 if multiplicative uses independent stages, otherwise 0{p_end}
 {synopt:{cmd:r(mean_overall)}}mean overall efficiency{p_end}
 {synopt:{cmd:r(mean_stage1)}}mean Stage 1 efficiency{p_end}
 {synopt:{cmd:r(mean_stage2)}}mean Stage 2 efficiency{p_end}
 
 {syntab:Macros}
-{synopt:{cmd:r(method)}}decomposition method used{p_end}
+{synopt:{cmd:r(method)}}requested method{p_end}
+{synopt:{cmd:r(formulation)}}relational_crs, independent_product, or independent_mean{p_end}
 {synopt:{cmd:r(rts)}}returns to scale used{p_end}
 {synopt:{cmd:r(orientation)}}orientation used{p_end}
 {p2colreset}{...}
 
+
+{pstd}
+With {cmd:matrix}, {cmd:r(efficiencies)} has columns overall, stage1, stage2;
+{cmd:r(status)} has the same columns with 1 for available and 0 for missing.
+For {cmd:relational_crs}, {cmd:r(weights_input)},
+{cmd:r(weights_intermediate)}, and {cmd:r(weights_output)} contain (v,w,u).
+{cmd:r(decomposition_status)} is 0 for primary failure, 1 for primary-weight
+fallback, or 2 for accepted secondary optimization. Undefined component ratios
+are also reflected in {cmd:r(status)}. For independent formulations,
+{cmd:r(lambda_stage1)} and {cmd:r(lambda_stage2)} contain evaluator rows and
+reference-DMU columns. Missing solve rows remain missing.
 
 {marker references}{...}
 {title:References}

@@ -1,0 +1,64 @@
+Bounded DEA stage-link integration (dea2.0.72,simplex2.0.25)
+
+Run from the complete package,with Python3,NumPy and licensed Stata16+:
+  python tests/test_stage_linkage.py --stata /path/to/stata-mp --output /new/output
+Use a new output directory. Fixtures and component scripts are packaged; no
+research checkout,network,external optimizer or mutable downloaded data is used.
+Exact checks use Fraction on the actual stored binary64 input coefficients.
+Reference hashes were frozen from the independently validated numerical candidate
+on Stata16.1 MP; a differing platform result must be reviewed, not auto-updated.
+
+16 strictly positive data sets x4RTS x2orientations x2stages x4policies produce
+1024 commands and6336 main DMU rows. Off/audit preserve pre-change outputs;
+repair preserves the sealed candidate; slow/fast return identical results.
+402 main repaired rows (201 per stage) and304 auxiliary repaired rows are
+covered. They are transformed/repeated controls, not independent random samples.
+The observer records the original Stage-1 LP,old/new bases,and actual Stage-2 LP.
+402 exact primal/dual certificates and402 old/new basis enclosures are checked;
+returned weights/slacks and their objective are checked in original data units.
+
+535 arithmetic cases test the sufficient fast screen and residual intervals.
+Direct bounds/range guards,failure injections,corrected-target failure handling,
+recoverylog counts/statuses,Stage-1/2 score parity,auxiliary/direct parity and
+124 engine/tolerance/policy combinations complement the exact checks.
+Public checks use both syntax forms,noncontiguous selected observations,allRTS,
+both orientations andstages,a saturated private recorder,unrelated commands,
+and injected primal/dual failures. Inputs and excluded observations are retained.
+The old row-recovery suite explicitly disables the new stage-link guard in its
+DEA component to retain its frozen component reference; default interaction is
+covered here and by the full public regression suites.
+
+Ordinary simplex TE now checks the radial factor passed from Stage 1 to
+Stage 2. A bounded retry is permitted only after arithmetic error intervals
+prove a negative component in the original-row basis solution. A corrected
+factor must pass the change budget and original primal/dual quality checks.
+The retry uses min(tolerance(),1e-10) for that DMU; the public default tolerance
+is unchanged. Stage 2 rebuilds its LP from the same original-data-derived,
+column-normalized inputs and outputs, with a fresh basis and the accepted
+factor. A failed corrected Stage 2 retains the score and withholds references.
+Stage(1) uses the same radial decision and skips slack optimization.
+
+r(stage_linkage) records the before/after factors, reason, retry tolerance and
+Stage-2 quality for the main ordinary simplex TE calculation. It is available
+without recoverylog or reference; VRS auxiliary calls do not replace its rows.
+r(numerical_diagnostics)'s radial_initial is the accepted factor used to build
+Stage 2, so use stage_linkage's radial_before for the value before this retry.
+Factors are theta (input) and phi (output); output efficiency is 1/phi, subject
+to the existing near-one presentation cleanup. The matrix is not added to
+saving() files. The IPM projection-recovery contract remains separate.
+
+The basis check is bounded by m<=32,n+2m<=4096,m*n<=16384 and arithmetic-range
+guards. Here m and n are the original Stage-1 LP row and real-variable counts.
+It requires a complete original-row basis; unsupported/uncertain cases retain
+the prior result. The dual fallback is not covered by this correction. Shared radial TE
+subproblems also use the guard, but only ordinary model(te) exposes this
+public diagnostic matrix.
+One fresh retry is allowed; existing solver-internal recovery caps still apply.
+This does not guarantee a feasible exact fixed target for every dataset, nor
+remove all tolerance sensitivity or nonuniqueness of reference weights.
+
+The finite checks do not establish universal numerical reliability. Tightening
+the user tolerance can still change results; a raw residual near3e-8 at1e-9
+remains possible under normalized acceptance. Native IPM and SW2007 methods are
+unchanged and remain separate research tasks. Private fault/policy controls do
+not appear in public syntax. Full package/reload tests are separate validation.

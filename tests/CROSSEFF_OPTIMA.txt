@@ -1,0 +1,23 @@
+Opt-in optimal-face diagnostic verification (schema7301)
+
+Command:
+  python tests/test_crosseff_optima.py --stata /path/to/stata-mp --output /new/output
+Optional prior-package comparison:
+  --baseline-ado /path/to/prior/ado
+
+12 selected sensitive commands × IPM/simplex =24 command pairs;126 overlapping
+evaluator-option records,not126 independent datasets. The underlying63models
+have61finite secondary optima and2exact unbounded secondary models. Independent
+raw-data Fraction references verify all actual coordinate bounds, denominator
+states/bounds, cutoff states and stored-weight linkage. They distinguish actual
+VRS intercept from artificial split coordinates. Every legacy numeric object
+in the snapshot is required to remain byte-identical with optimadiag enabled.
+
+The frozen references originate in the independent T72 research LP audit; their
+source hash is retained in fixtures/crosseff_optima.json. Public testing needs
+only this repository, NumPy/SciPy and licensed Stata16+. It has no R dependency.
+Diagnostics are opt-in and never change current weights or choose a tie-breaker.
+This test does not certify CE/rank ranges, unsupported domains or universal
+availability outside the bounded exact solver. Installation, helper reload,
+fault/budget paths, syntax and broader unchanged-output regressions are also
+required when changing the package. Numerical failure is not auto-retried.

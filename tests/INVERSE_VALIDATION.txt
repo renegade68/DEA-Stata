@@ -1,0 +1,92 @@
+Checked simplex basis inverses (simplex 2.0.17 / dea 2.0.64)
+03 November 2026
+
+Behavior
+The inverse builder retains its equilibrated LU/SVD order, correction attempts
+and internal threshold tau=1e-8. It checks both B*X-I and X*B-I. This threshold
+is separate from the user's LP tolerance and does not relax original-LP checks.
+The factorized solver's existing residual and solve functions are unchanged.
+
+A fast acceptance test is allowed only when a conservative error bound leaves
+margin below tau. A false/zero fast result requests compensated verification;
+it does not itself reject the inverse. Unsupported extreme mixed products can
+remain unavailable. A singular matrix is not accepted merely because SVD returns
+a finite pseudo-inverse. Availability may change on difficult data, and a new
+optimal basis can have different reference weights when optima are not unique.
+
+Fast bound and assumptions
+Assume IEEE binary64 round-to-nearest arithmetic and the standard matrix-product
+error model |fl(BX)-BX| <= gamma_m |B||X|, gamma_m=m*u/(1-m*u), u=2^-53.
+This assumption has not been formally verified against Stata's compiled kernel.
+The tested environment is Stata/MP 16.1; the finite regression suite is not a
+proof of every platform, data set, or solver path.
+
+Require matching square matrices, 1<=m<=4096, no missing values, each matrix
+nonzero, and every nonzero entry's magnitude within [2^-200,2^200]. Let
+a=max(abs(B)), b=max(abs(X)), and compute
+    Rhat=64*epsilon(1)*m*m*(a*b+1).
+Only if Rhat<=tau/4 are ordinary left/right residuals computed for fast use.
+Accept only if both observed maximum absolute residuals are <=tau/2.
+
+Inputs in the safe interval are multiples of 2^-252. Products/sums have an
+exact grid no smaller than 2^-504 and sums of at most 4096 products are bounded
+by 2^412. Thus these products, sums and identity subtractions avoid overflow and
+underflow under the stated arithmetic model. With gamma_m<=2*m*u, the product
+error plus identity-subtraction rounding is at most 5*m*m*u*(a*b+1).
+Since epsilon(1)=2*u, the scale 64*epsilon(1)*m*m is exactly representable.
+Accounting for up to three rounded positive operations gives
+    Rhat >= 128*m*m*u*(a*b+1)*(1-u)^3 >= 64*m*m*u*(a*b+1).
+The bound itself therefore has ample rounding margin. The true residual is
+bounded by tau/2+tau/4 < tau. Halving and quartering tau are exact here.
+This is deliberately loose: cancellation and disparate scales often trigger
+the compensated path. No uniform speedup for such inputs is claimed.
+
+Exact binary constants
+Mata exponentiation must not be assumed to return an exact power of two.
+The implementation uses binary64-exact decimal literals:
+    2^-200 = 6.223015277861142e-61
+    2^200  = 1.6069380442589903e60
+    2^256  = 1.157920892373162e77
+The last constant reciprocally scales compensated-product operands into the
+splitter's safe interval. Unsafe/missing products are rejected without falling
+back to an unverified ordinary product. Earlier research used computed 2^256;
+504 extreme-scale cutoff pairs exposed 32 false acceptances and 26 false
+rejections by that helper. Exact constants correct all 58 in the retained tests.
+These were helper experiments, not 58 observed incorrect public LP solutions.
+
+Reproduce
+    python3 tests/test_inverse_validation.py --stata /path/to/stata-mp \
+      --output /new/output/directory
+Requires NumPy, Python's Fraction arithmetic and a licensed Stata 16+ executable.
+No research folders, network downloads, R packages, or system installation edits
+are needed. All 59 runtime/help/do files are copied into an isolated directory.
+Source/fixture hashes, generated do-files, returned doubles, and logs are saved.
+
+The distributed fixture contains 120 matrices and 87 captured B/X pairs encoded
+as hexadecimal binary64 values. Null denotes an intentional missing-value test.
+It combines actual failed solver bases with synthetic singular, near-dependent,
+scaled, and dense matrices; it is not an empirical DEA input data set.
+Tests cover all 120 inverse decisions, 350 fast/compensated input pairs, eight
+invalid-input controls, and 504 extreme-scale cutoff neighbors. Exact Fraction
+products independently check accepted inverses and cutoff classification.
+The full 4096-square limit is not exercised; larger-dimension rejection uses an
+incompatible-shape control. Three extreme mixed-product controls intentionally
+remain unverifiable. Use test_simplex_stability.py for certified whole LPs and
+test_recoverylog.py for public numeric-return parity and recovery diagnostics.
+
+Installation
+Use the full matched package and a fresh Stata session, or save data then clear
+all. Updated loader readiness checks recognize the current inverse code when
+compatible old Mata functions are present. Arbitrary hot replacement of older
+loaded programs or changed Mata structures is not an ABI guarantee.
+See ../INSTALL_RECOVERYLOG.txt for the supported installation procedure.
+
+Sources for the arithmetic model
+S. M. Rump (2012), Fast Interval Matrix Multiplication, Numerical Algorithms
+61:1-34, equation (2.5) and the discussion of computing error bounds:
+https://grouper.ieee.org/groups/1788/email/pdfUDuSDSsrNx.pdf
+Stata [M-5] epsilon(): https://www.stata.com/manuals/m-5epsilon.pdf
+Stata [M-5] quadcross(): https://www.stata.com/manuals/m-5quadcross.pdf
+quadcross sums in quad precision and returns a double. Multiplication is not
+thereby assumed exact. The interval restrictions and inflated scalar bound
+above are this implementation's design, not the full Rump interval algorithm.

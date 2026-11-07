@@ -1,4 +1,4 @@
-*! version 0.5.0  20jul2026
+*! version 0.7.0  01nov2026
 *! Internal stage-1 radial technical-efficiency translator
 program define _dea_tecontract, rclass
     version 16.0
@@ -38,8 +38,8 @@ program define _dea_tecontract, rclass
         di as error "_dea_tecontract: scaling() must be none or row"
         exit 198
     }
-    if `tolerance' <= 0 {
-        di as error "_dea_tecontract: tolerance() must be positive"
+    if missing(`tolerance') | `tolerance' <= 0 {
+        di as error "_dea_tecontract: tolerance() must be positive and finite"
         exit 198
     }
     if "`slacknormalization'" == "" local slacknormalization "raw"
@@ -73,6 +73,8 @@ program define _dea_tecontract, rclass
     local N = r(N)
     local failed = r(n_failed)
     local fallbacks = r(fallbacks)
+    local retries = r(native_retries)
+    local conflicts = r(status_conflicts)
     local mean_eff = r(mean_efficiency)
     local maxeq = r(max_eq_violation)
     local maxineq = r(max_ineq_violation)
@@ -98,6 +100,8 @@ program define _dea_tecontract, rclass
     return scalar N = `N'
     return scalar n_failed = `failed'
     return scalar fallbacks = `fallbacks'
+    return scalar native_retries = `retries'
+    return scalar status_conflicts = `conflicts'
     return scalar mean_efficiency = `mean_eff'
     return scalar max_eq_violation = `maxeq'
     return scalar max_ineq_violation = `maxineq'
@@ -150,7 +154,7 @@ void _dea_tecontract_solve(string scalar inputs, string scalar outputs,
     real scalar n, m, s, k, nv, nv2, fallback, fallback2, objscale, radial, radialtry
     real rowvector slackweights, inputscale, outputscale
     real scalar rowscalemin, rowscalemax, maxeq, maxineq, maxbound
-    real scalar fallbacks, failed, stage2failed, stage2fallbacks
+    real scalar fallbacks, failed, stage2failed, stage2fallbacks, retries, conflicts
     struct _DEA_LPResult scalar out, out2
 
     X=st_data(.,tokens(inputs),touse)
@@ -168,7 +172,7 @@ void _dea_tecontract_solve(string scalar inputs, string scalar outputs,
         slackweights=(1:/inputscale,1:/outputscale)
     }
     else slackweights=J(1,m+s,1)
-    fallbacks=0; failed=0; stage2failed=0; stage2fallbacks=0
+    fallbacks=0; failed=0; stage2failed=0; stage2fallbacks=0; retries=0; conflicts=0
     maxeq=0; maxineq=0; maxbound=0
 
     for (k=1; k<=n; k++) {
@@ -198,17 +202,10 @@ void _dea_tecontract_solve(string scalar inputs, string scalar outputs,
         out=_dea_lpcontract_dispatch(c,"min",Aeq,beq,Aub,bub,lb,ub,
             engine,tol,scaling,0,trace,fallback,objscale,
             rowscalemin,rowscalemax)
-        /* A radial DEA technology always contains the evaluated DMU, so the
-           stage-1 primal has a feasible reference solution.  Under auto,
-           verify a simplex infeasible/unbounded classification with IPM
-           before treating it as terminal.  Keep this DEA-specific invariant
-           out of the generic LP adapter, where either status may be genuine. */
-        if (engine=="auto" & (out.status==1 | out.status==2)) {
-            out=_dea_lpcontract_dispatch(c,"min",Aeq,beq,Aub,bub,lb,ub,
-                "ipm",tol,scaling,0,trace,fallback2,objscale,
-                rowscalemin,rowscalemax)
-            fallback=1
-        }
+        // Auto classification checks and native retries belong to the shared
+        // dispatcher; preserve its final status and count each solve once.
+        retries=retries+sum((out.attempts[.,1]:==2):&(out.attempts[.,2]:>0))
+        conflicts=conflicts+out.status_conflict
         statuses[k]=out.status
         engines[k]=(out.engine=="simplex" ? 1 : (out.engine=="ipm" ? 2 : 0))
         fallbacks=fallbacks+fallback
@@ -237,15 +234,10 @@ void _dea_tecontract_solve(string scalar inputs, string scalar outputs,
                 out2=_dea_lpcontract_dispatch(c2,"min",Aeq2,beq2,Aub2,bub2,
                     lb2,ub2,engine,tol,scaling,0,trace,fallback2,objscale,
                     rowscalemin,rowscalemax)
-                /* The fixed-radial stage-2 program is feasible whenever the
-                   accepted stage-1 solution is feasible.  Verify suspect
-                   simplex terminal classifications under auto as well. */
-                if (engine=="auto" & (out2.status==1 | out2.status==2)) {
-                    out2=_dea_lpcontract_dispatch(c2,"min",Aeq2,beq2,Aub2,bub2,
-                        lb2,ub2,"ipm",tol,scaling,0,trace,fallback,objscale,
-                        rowscalemin,rowscalemax)
-                    fallback2=1
-                }
+                retries=retries+sum((out2.attempts[.,1]:==2):&(out2.attempts[.,2]:>0))
+                conflicts=conflicts+out2.status_conflict
+                fallbacks=fallbacks+fallback2
+                stage2fallbacks=stage2fallbacks+fallback2
                 /* A barrier solution may report the radial optimum a few
                    digits beyond the feasible optimal face.  Retry only after
                    failure, at the conservative endpoint of the declared
@@ -260,11 +252,13 @@ void _dea_tecontract_solve(string scalar inputs, string scalar outputs,
                     out2=_dea_lpcontract_dispatch(c2,"min",Aeq2,beq2,Aub2,bub2,
                         lb2,ub2,engine,tol,scaling,0,trace,fallback2,objscale,
                         rowscalemin,rowscalemax)
+                    retries=retries+sum((out2.attempts[.,1]:==2):&(out2.attempts[.,2]:>0))
+                    conflicts=conflicts+out2.status_conflict
+                    fallbacks=fallbacks+fallback2
+                    stage2fallbacks=stage2fallbacks+fallback2
                     if (out2.status==0) radial=radialtry
                 }
                 stage2statuses[k]=out2.status
-                fallbacks=fallbacks+fallback2
-                stage2fallbacks=stage2fallbacks+fallback2
                 if (out2.status==0) {
                     lam=out2.x[1..n]'
                     Sin[k,.]=out2.x[(n+1)..(n+m)]
@@ -297,12 +291,16 @@ void _dea_tecontract_solve(string scalar inputs, string scalar outputs,
                 Sin[k,.]=(x0-X'*lam)'
                 Sout[k,.]=(Y'*lam-radial*y0)'
             }
-            Sin[k,.]=Sin[k,.]:*(abs(Sin[k,.]):>10*tol)
-            Sout[k,.]=Sout[k,.]:*(abs(Sout[k,.]):>10*tol)
+            // Do not round checked slacks after solving the original equalities.
             eff[k]=(orientation=="input" ? radial : 1/radial)
             diag=_dea_lpcontract_diagnostics(out.x,Aeq,beq,Aub,bub,lb,ub)
             maxeq=max((maxeq,diag[1])); maxineq=max((maxineq,diag[2]))
             maxbound=max((maxbound,diag[3]))
+            if (stage==2) {
+                diag=_dea_lpcontract_diagnostics(out2.x,Aeq2,beq2,Aub2,bub2,lb2,ub2)
+                maxeq=max((maxeq,diag[1]));maxineq=max((maxineq,diag[2]))
+                maxbound=max((maxbound,diag[3]))
+            }
         }
         else failed++
     }
@@ -311,6 +309,8 @@ void _dea_tecontract_solve(string scalar inputs, string scalar outputs,
     if (statusvar!="") st_store(obs,st_varindex(statusvar),statuses)
     st_numscalar("r(N)",n); st_numscalar("r(n_failed)",failed)
     st_numscalar("r(fallbacks)",fallbacks)
+    st_numscalar("r(native_retries)",retries)
+    st_numscalar("r(status_conflicts)",conflicts)
     st_numscalar("r(mean_efficiency)",(failed<n ? mean(select(eff,eff:<.)) : .))
     st_numscalar("r(max_eq_violation)",maxeq)
     st_numscalar("r(max_ineq_violation)",maxineq)

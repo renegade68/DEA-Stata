@@ -1,0 +1,46 @@
+Bounded exact original-row recovery (simplex2.0.24,contract0.4.8)
+
+Run from a complete package,with NumPy/SciPy and licensed Stata16+:
+  python tests/test_row_recovery.py --stata /path/to/stata-mp --output /new/output
+The output directory must be new. Fixtures and component scripts are packaged.
+No downloaded data,external optimizer,network or research checkout is required.
+Retain/off/strict policies and source perturbations are private test controls.
+
+The316 LP fixtures contain312 exact primal/dual optimum witnesses,2 exact
+inconsistent systems and2 unbounded rays. Common316x3 and public316x2scalesx3
+runs check original full constraints,objective and dual-weighted errors against
+stored binary inputs using Fraction. These transformed cases overlap;counts
+are not an empirical failure rate or independent datasets.
+
+Additional checks:1536 rank/RHS cases,1607 expansion arithmetic cases,316
+actual-iteration/recovery-depth controls,16 direct approval controls and6
+failure injections,192 dependent-row affine LPs and9 bounded MILPs with actual
+branching. Eight strictly positive DEA datasets yield192 commands. Observer
+copies must preserve every ordinary output. Existing exact/approximate results
+are preserved when already certified;only a verified correction may replace x.
+
+Bounds:256 original rows/columns,rank32,32 expansion components,one million
+row-mapping work units,exact reversible power-of-two normalization and guarded
+product range. No tolerance rank decision,no discarded expansion term,and no
+unchecked deletion of a RHS contradiction. A limit yields unavailable rather
+than a guessed rank. Some small matrices can also exhaust these guards.
+The selector may not support every consistent system. Default retain can keep
+an earlier uncertified success;there is no universal exact-optimality guarantee.
+
+A trivial empty basis requires exactly zero A and b,nonnegative cost,and a
+coordinatewise optimum at the relevant lower bounds. Zero-cost alternatives
+are preserved. The late row-recovery child runs once without recursive row or
+duplicate recovery. Full original primal/dual checks gate its acceptance.
+Earlier successful paths retain their order;one top-level audit accounts for
+all actual iterations. No new public syntax or default strict switch is added.
+
+The3 previously diagnosed full-rank fixed-radial DEA stage2 quality failures
+are outside this row-dependence fix. Native IPM and environmental bootstrap
+methodology are unchanged. Full package installation/reload tests complement
+this suite;the numerical suite alone is not installation validation.
+
+Stage-link interaction note (simplex2.0.25): the DEA component of this suite
+sets the private stage-link policy off to preserve its frozen row-recovery
+reference. See STAGE_LINKAGE.txt for default-on interaction,exact fixed-target
+proofs and public diagnostic checks. The historical three Stage-2 controls
+above describe this component-isolated baseline, not the current default.

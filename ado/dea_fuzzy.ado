@@ -1,5 +1,12 @@
-*! version 1.0.1  03may2026
-*! dea_fuzzy.ado — Fuzzy DEA via α-cut approach
+*! version 1.1.0  03nov2026
+*! F11: disambiguate rounded alpha suffixes; return sorted alpha/output mapping.
+*! 2026-11-01: accept the minimum option abbreviations advertised in help.
+*! 2026-11-01: apply solver tolerance; check feasibility, bounds, and interval ordering.
+*! 2026-11-01: correct NIRS -> DRS and NDRS -> IRS alias mapping.
+*! 2026-11-01: honor if/in for evaluation and reference samples; reject empty samples.
+*! 2026-11-01: preflight output names; explicit replacevars; protect model data.
+*! dea_fuzzy.ado — Triangular alpha-cut DEA, Kao-Liu best/worst convention
+*! 2026-11-03: complete-cohort summary; gap-aware nesting; exact center endpoints; safe ID display.
 *! Requires: Stata 16.0 or later (LinearProgram class)
 *!
 *! AUTHORS:
@@ -11,7 +18,7 @@
 *!
 *! METHOD:
 *! -------
-*! Implements fuzzy DEA using the α-cut (possibility) approach.
+*! Implements triangular alpha-cut DEA with Cartesian-product joint cuts.
 *! For each α ∈ [0,1], triangular fuzzy inputs/outputs are sliced into
 *! crisp intervals [x_L(α), x_U(α)], and two parametric LPs are solved
 *! per DMU:
@@ -45,11 +52,11 @@
 *! Lertworasirikul, S., Fang, S.-C., Joines, J. A., & Nuttle, H. L. W.
 *!   (2003). Fuzzy data envelopment analysis (DEA): a possibility approach.
 *!   Fuzzy Sets and Systems, 139(2), 379-394.
-*!   → Possibility measure DEA; pessimistic = lower α-cut efficiency
+*!   → Background: a different possibilistic DEA formulation
 *!
 *! Guo, P., & Tanaka, H. (2001). Fuzzy DEA: a perceptual evaluation method.
 *!   Fuzzy Sets and Systems, 119(1), 149-160.
-*!   → Fuzzy efficiency intervals and membership functions
+*!   → Background: a different fuzzy DEA formulation
 *!
 *! Cooper, W. W., Park, K. S., & Yu, G. (1999). IDEA and AR-IDEA: Models
 *!   for dealing with imprecise data in DEA. Management Science, 45(4),
@@ -78,9 +85,71 @@
 // Compile Mata function when this file is (re)loaded
 // ============================================================================
 capture mata: mata drop _dea_fuzzy_solve()
+capture mata: mata drop _dea_fuzzy_lp()
+capture mata: mata drop _dea_fuzzy_gridcheck()
+capture mata: mata drop _dea_fuzzy_summary()
+capture mata: mata drop _dea_fuzzy_display()
 
 mata:
 mata set matastrict on
+
+// Solve and validate a single LP. A convergence flag alone is insufficient.
+// Return: score, retry count, infeasible, unbounded, numerical failure, residual.
+real rowvector _dea_fuzzy_lp(real rowvector c, real matrix A, real colvector b,
+    real matrix E, real colvector d, real rowvector lb, real rowvector ub,
+    real scalar tol, string scalar orientation)
+{
+    class LinearProgram scalar S
+    real rowvector x, ix
+    real scalar attempt, use_tol, status, first_status, value, score, residual
+    real scalar check_tol
+    check_tol=1e-8
+    first_status=0
+    for (attempt=1; attempt<=2; attempt++) {
+        use_tol=tol
+        if (attempt==2) {
+            use_tol=min((tol/100,1e-12))
+            if (use_tol<=0) use_tol=tol
+        }
+        S=LinearProgram()
+        S.setMaxOrMin("min")
+        S.setCoefficients(c)
+        S.setInequality(A,b)
+        if (rows(E)>0) S.setEquality(E,d)
+        S.setBounds(lb,ub)
+        S.setTrace("off")
+        S.setTol(use_tol)
+        value=S.optimize()
+        status=S.errorcode()
+        if (S.converged() & status==0 & value<.) {
+            x=S.parameters()
+            status=3
+            if (cols(x)==cols(c) & !hasmissing(x)) {
+                residual=max((0,max((A*x'-b):/(1:+abs(b):+abs(A)*abs(x)'))))
+                if (rows(E)>0) residual=max((residual,max(abs(E*x'-d):/(1:+abs(d):+abs(E)*abs(x)'))))
+                ix=selectindex(lb:<.)
+                if (cols(ix)>0) residual=max((residual,max((lb[ix]-x[ix]):/(1:+abs(lb[ix])))))
+                ix=selectindex(ub:<.)
+                if (cols(ix)>0) residual=max((residual,max((x[ix]-ub[ix]):/(1:+abs(ub[ix])))))
+                residual=max((residual,abs(c*x'-value)/(1+abs(value))))
+                score=value
+                if (orientation=="output") score=(value<0 ? -1/value : .)
+                if (residual<=check_tol & score>=0 & score<=1+check_tol) {
+                    return((score,attempt-1,0,0,0,residual))
+                }
+            }
+        }
+        else if (status==0) status=3
+        if (attempt==1) first_status=status
+    }
+    // Preserve missing-score reporting for repeated native status 1/2 reports.
+    // Native status is not a mathematical infeasibility/unboundedness certificate.
+    // Other failures must abort before permanent result variables are changed.
+    if (status==first_status & (status==1 | status==2)) {
+        return((.,1,status==1,status==2,0,.))
+    }
+    return((.,1,0,0,1,.))
+}
 
 // ----------------------------------------------------------------------------
 // _dea_fuzzy_solve()
@@ -98,7 +167,7 @@ mata set matastrict on
 //   alpha       - α-cut level ∈ [0,1]
 //   orientation - "input" or "output"
 //   rts         - "crs", "vrs", "drs", or "irs"
-//   tol         - numerical tolerance (unused; reserved for future use)
+//   tol         - requested solver convergence tolerance; retried more tightly if needed
 //   pess_var    - variable name to store pessimistic efficiency scores
 //   opt_var     - variable name to store optimistic efficiency scores
 //   touse       - sample marker variable name
@@ -129,7 +198,8 @@ void _dea_fuzzy_solve(
     real scalar   tol,
     string scalar pess_var,
     string scalar opt_var,
-    string scalar touse)
+    string scalar touse,
+    string scalar stats_name)
 {
     // ----------------------------------------------------------------
     // Load data
@@ -137,7 +207,7 @@ void _dea_fuzzy_solve(
     real matrix X_c, X_lo, X_hi, Y_c, Y_lo, Y_hi
     real matrix X_L, X_U, Y_L, Y_U, X_ref, Y_ref
     real colvector obs_indices
-    real scalar n, m, s, k, obs_k, rc
+    real scalar n, m, s, k, obs_k
 
     X_c  = st_data(., tokens(inputs),   touse)
     X_lo = st_data(., tokens(xlo_vars), touse)
@@ -151,15 +221,31 @@ void _dea_fuzzy_solve(
     m = cols(X_c)
     s = cols(Y_c)
 
+    real rowvector xs, ys
+    xs=colmax(abs(X_c)\abs(X_lo)\abs(X_hi))
+    ys=colmax(abs(Y_c)\abs(Y_lo)\abs(Y_hi))
+    for (k=1;k<=cols(xs);k++) if (xs[k]==0) xs[k]=1
+    for (k=1;k<=cols(ys);k++) if (ys[k]==0) ys[k]=1
+    X_c=X_c:/xs; X_lo=X_lo:/xs; X_hi=X_hi:/xs
+    Y_c=Y_c:/ys; Y_lo=Y_lo:/ys; Y_hi=Y_hi:/ys
+
     // ----------------------------------------------------------------
     // Compute α-cut bounds
     //   x_L(α) = x_lo + α*(x_center − x_lo)   [lo → center as α: 0→1]
     //   x_U(α) = x_hi − α*(x_hi − x_center)   [hi → center as α: 0→1]
     // ----------------------------------------------------------------
-    X_L = X_lo + alpha :* (X_c  - X_lo)   // n × m
-    X_U = X_hi - alpha :* (X_hi - X_c )   // n × m
-    Y_L = Y_lo + alpha :* (Y_c  - Y_lo)   // n × s
-    Y_U = Y_hi - alpha :* (Y_hi - Y_c )   // n × s
+    // Convex combinations avoid cancellation; alpha=1 uses the identical
+    // center matrix in all four paths, not separately rounded differences.
+    X_L = (1-alpha):*X_lo + alpha:*X_c
+    X_U = (1-alpha):*X_hi + alpha:*X_c
+    Y_L = (1-alpha):*Y_lo + alpha:*Y_c
+    Y_U = (1-alpha):*Y_hi + alpha:*Y_c
+    if (alpha==0) {
+        X_L=X_lo; X_U=X_hi; Y_L=Y_lo; Y_U=Y_hi
+    }
+    if (alpha==1) {
+        X_L=X_c; X_U=X_c; Y_L=Y_c; Y_U=Y_c
+    }
 
     // ----------------------------------------------------------------
     // Result vectors
@@ -174,8 +260,8 @@ void _dea_fuzzy_solve(
     real rowvector c, lb, ub
     real matrix    A_ineq, A_eq
     real colvector b_ineq, b_eq, x0, y0
-    real scalar    phi_val
-    class LinearProgram scalar S
+    real rowvector fit, lpstats
+    lpstats=J(1,6,0)
 
     for (k = 1; k <= n; k++) {
 
@@ -232,17 +318,10 @@ void _dea_fuzzy_solve(
                 b_ineq = b_ineq \ (-1)
             }
 
-            S = LinearProgram()
-            S.setMaxOrMin("min")
-            S.setCoefficients(c)
-            S.setInequality(A_ineq, b_ineq)
-            if (rows(A_eq) > 0) S.setEquality(A_eq, b_eq)
-            S.setBounds(lb, ub)
-            S.setTrace("off")
-            rc = S.optimize()
-            if (S.converged() & S.errorcode() == 0) {
-                eff_pess[k] = S.value()
-            }
+            fit=_dea_fuzzy_lp(c,A_ineq,b_ineq,A_eq,b_eq,lb,ub,tol,orientation)
+            eff_pess[k]=fit[1]
+            lpstats[1..5]=lpstats[1..5]+(1,fit[2..5])
+            if (fit[6]<.) lpstats[6]=max((lpstats[6],fit[6]))
 
             // --- OPTIMISTIC ---
             x0 = X_L[k, ]'
@@ -270,17 +349,10 @@ void _dea_fuzzy_solve(
                 b_ineq = b_ineq \ (-1)
             }
 
-            S = LinearProgram()
-            S.setMaxOrMin("min")
-            S.setCoefficients(c)
-            S.setInequality(A_ineq, b_ineq)
-            if (rows(A_eq) > 0) S.setEquality(A_eq, b_eq)
-            S.setBounds(lb, ub)
-            S.setTrace("off")
-            rc = S.optimize()
-            if (S.converged() & S.errorcode() == 0) {
-                eff_opt[k] = S.value()
-            }
+            fit=_dea_fuzzy_lp(c,A_ineq,b_ineq,A_eq,b_eq,lb,ub,tol,orientation)
+            eff_opt[k]=fit[1]
+            lpstats[1..5]=lpstats[1..5]+(1,fit[2..5])
+            if (fit[6]<.) lpstats[6]=max((lpstats[6],fit[6]))
         }
         else {
             // ============================================================
@@ -337,18 +409,10 @@ void _dea_fuzzy_solve(
                 b_ineq = b_ineq \ (-1)
             }
 
-            S = LinearProgram()
-            S.setMaxOrMin("min")
-            S.setCoefficients(c)
-            S.setInequality(A_ineq, b_ineq)
-            if (rows(A_eq) > 0) S.setEquality(A_eq, b_eq)
-            S.setBounds(lb, ub)
-            S.setTrace("off")
-            rc = S.optimize()
-            if (S.converged() & S.errorcode() == 0) {
-                phi_val = -S.value()                 // φ ≥ 1
-                if (phi_val > 0) eff_pess[k] = 1 / phi_val   // 1/φ ∈ (0,1]
-            }
+            fit=_dea_fuzzy_lp(c,A_ineq,b_ineq,A_eq,b_eq,lb,ub,tol,orientation)
+            eff_pess[k]=fit[1]
+            lpstats[1..5]=lpstats[1..5]+(1,fit[2..5])
+            if (fit[6]<.) lpstats[6]=max((lpstats[6],fit[6]))
 
             // --- OPTIMISTIC ---
             x0 = X_L[k, ]'
@@ -376,26 +440,100 @@ void _dea_fuzzy_solve(
                 b_ineq = b_ineq \ (-1)
             }
 
-            S = LinearProgram()
-            S.setMaxOrMin("min")
-            S.setCoefficients(c)
-            S.setInequality(A_ineq, b_ineq)
-            if (rows(A_eq) > 0) S.setEquality(A_eq, b_eq)
-            S.setBounds(lb, ub)
-            S.setTrace("off")
-            rc = S.optimize()
-            if (S.converged() & S.errorcode() == 0) {
-                phi_val = -S.value()
-                if (phi_val > 0) eff_opt[k] = 1 / phi_val
-            }
+            fit=_dea_fuzzy_lp(c,A_ineq,b_ineq,A_eq,b_eq,lb,ub,tol,orientation)
+            eff_opt[k]=fit[1]
+            lpstats[1..5]=lpstats[1..5]+(1,fit[2..5])
+            if (fit[6]<.) lpstats[6]=max((lpstats[6],fit[6]))
         }
     }
 
     // ----------------------------------------------------------------
     // Store results back to Stata
     // ----------------------------------------------------------------
+    st_matrix(stats_name,lpstats)
     st_store(obs_indices, st_varindex(pess_var), eff_pess)
     st_store(obs_indices, st_varindex(opt_var),  eff_opt)
+}
+
+
+// Check all observed levels, including comparisons across a missing middle cut.
+// The final alpha=1 interval must collapse whenever both endpoints are known.
+real scalar _dea_fuzzy_gridcheck(string scalar pvars,string scalar ovars,
+    string scalar touse,string scalar alphas,real scalar tol)
+{
+    real matrix P,O
+    real rowvector a
+    real scalar i,j,lastp,lasto,bad
+    P=st_data(.,tokens(pvars),touse);O=st_data(.,tokens(ovars),touse)
+    a=strtoreal(tokens(alphas));bad=0
+    for(i=1;i<=rows(P);i++) {
+        lastp=.;lasto=.
+        for(j=1;j<=cols(P);j++) {
+            if(P[i,j]<. & O[i,j]<.) {
+                bad=bad+(P[i,j]>O[i,j]+tol)
+                if(a[j]==1) bad=bad+(abs(P[i,j]-O[i,j])>tol)
+            }
+            if(P[i,j]<.) {
+                if(lastp<.) bad=bad+(lastp>P[i,j]+tol)
+                lastp=(lastp<. ? max((lastp,P[i,j])) : P[i,j])
+            }
+            if(O[i,j]<.) {
+                if(lasto<.) bad=bad+(O[i,j]>lasto+tol)
+                lasto=(lasto<. ? min((lasto,O[i,j])) : O[i,j])
+            }
+        }
+    }
+    return(bad)
+}
+
+// Summary uses one common cohort: rows with both endpoints at every requested
+// alpha. Per-cut availability counts remain visible; this is not defuzzification.
+void _dea_fuzzy_summary(string scalar pvars,string scalar ovars,
+    string scalar touse,string scalar alphas,string scalar dest,real scalar matrices)
+{
+    real matrix P,O,T
+    string rowvector destinations
+    real colvector complete,ii,pp,oo
+    real rowvector a
+    real scalar j,nc
+    P=st_data(.,tokens(pvars),touse);O=st_data(.,tokens(ovars),touse)
+    a=strtoreal(tokens(alphas));complete=(rowmissing((P,O)):==0)
+    ii=selectindex(complete);nc=rows(ii);T=J(cols(P),11,.)
+    for(j=1;j<=cols(P);j++) {
+        T[j,1..5]=(a[j],sum(P[,j]:<.),sum(O[,j]:<.),sum((P[,j]:<.):&(O[,j]:<.)),nc)
+        if(nc) {
+            pp=P[ii,j];oo=O[ii,j]
+            T[j,6..11]=(mean(pp),mean(oo),min(pp),max(pp),min(oo),max(oo))
+        }
+    }
+    destinations=tokens(dest)
+    st_matrix(destinations[1],T)
+    if(matrices) {
+        st_matrix(destinations[2],P);st_matrix(destinations[3],O)
+        st_matrix(destinations[4],complete)
+        st_matrix(destinations[5],selectindex(st_data(.,touse)))
+    }
+}
+
+void _dea_fuzzy_display(string scalar pvars,string scalar ovars,
+    string scalar touse,string scalar dmu,string scalar alphas)
+{
+    real matrix P,O
+    string colvector labels
+    real rowvector a
+    real scalar i,j
+    P=st_data(.,tokens(pvars),touse);O=st_data(.,tokens(ovars),touse)
+    a=strtoreal(tokens(alphas))
+    if(substr(st_vartype(dmu),1,3)=="str") labels=st_sdata(.,dmu,touse)
+    else labels=strtrim(strofreal(st_data(.,dmu,touse),"%21.0g"))
+    printf("\nDMU-level fuzzy efficiency\n%21s","DMU")
+    for(j=1;j<=cols(P);j++) printf("  alpha=%g (pess/opt)",a[j])
+    printf("\n")
+    for(i=1;i<=rows(P);i++) {
+        printf("%21s",labels[i])
+        for(j=1;j<=cols(P);j++) printf("  %9.6g/%9.6g",P[i,j],O[i,j])
+        printf("\n")
+    }
 }
 
 end   // end mata
@@ -419,12 +557,14 @@ program define dea_fuzzy, rclass
          YLO(varlist numeric)    ///
          YHI(varlist numeric)    ///
          ALPha(numlist >=0 <=1 sort) ///
-         RTS(string)             ///
+         Rts(string)             ///
          ORT(string)             ///
-         ORIentation(string)     ///
+         ORientation(string)     ///
          DMU(varname)            ///
          GENerate(string)        ///
-         TOLerance(real 1e-7)    ///
+         REPLACEVARS             ///
+         TOLerance(real 1e-10)    ///
+         MATrix                  ///
          DETail                  ///
          DEBUG]
 
@@ -436,26 +576,36 @@ program define dea_fuzzy, rclass
     if "`generate'"    == "" local generate "fdea_eff"
 
     // Resolve orientation (ort() is an alias)
-    if "`orientation'" == "" & "`ort'" != "" local orientation "`ort'"
+    if "`ort'" != "" & "`orientation'" != "" {
+        di as error "Specify only one of: ort() or orientation()"
+        exit 198
+    }
+    if "`ort'" != "" local orientation "`ort'"
     if "`orientation'" == "" local orientation "input"
 
     // Normalize RTS
     local rts = lower("`rts'")
     if "`rts'" == "ccr"  local rts "crs"
     if "`rts'" == "bcc"  local rts "vrs"
-    if "`rts'" == "ndrs" local rts "drs"
-    if "`rts'" == "nirs" local rts "irs"
+    // NIRS: sum(lambda) <= 1; NDRS: sum(lambda) >= 1.
+    if "`rts'" == "nirs" local rts "drs"
+    if "`rts'" == "ndrs" local rts "irs"
     if !inlist("`rts'", "crs", "vrs", "drs", "irs") {
-        di as error "rts() must be one of: crs ccr vrs bcc drs irs"
+        di as error "rts() must be one of: crs (ccr), vrs (bcc), nirs (drs), ndrs (irs)"
         exit 198
     }
 
     // Normalize orientation
     local orientation = lower("`orientation'")
-    if substr("`orientation'", 1, 1) == "i" local orientation "input"
-    if substr("`orientation'", 1, 1) == "o" local orientation "output"
+    if strpos("input", "`orientation'") == 1 local orientation "input"
+    if strpos("output", "`orientation'") == 1 local orientation "output"
     if !inlist("`orientation'", "input", "output") {
         di as error "orientation() must be 'input' or 'output'"
+        exit 198
+    }
+
+    if missing(`tolerance') | `tolerance' <= 0 {
+        di as error "tolerance() must be positive and finite"
         exit 198
     }
 
@@ -495,6 +645,40 @@ program define dea_fuzzy, rclass
         }
     }
 
+    // Keep historical suffixes when unique. Disambiguate every member of a
+    // colliding rounded bucket in sorted alpha order; reject repeated levels.
+    // Use the syntax-parsed numlist, which may itself round very close values.
+    local _previous_alpha=-1
+    foreach a of numlist `alpha' {
+        if `a' == `_previous_alpha' {
+            di as error "alpha() contains repeated levels after numlist parsing: `a'"
+            exit 198
+        }
+        local _previous_alpha `a'
+        local asuf = string(round(`a' * 100))
+        if "`_bucket_`asuf''" == "" local _bucket_`asuf'=0
+        local ++_bucket_`asuf'
+    }
+    local _planned ""
+    local _pessvars ""
+    local _optvars ""
+    local _alpha_collisions=0
+    foreach a of numlist `alpha' {
+        local asuf = string(round(`a' * 100))
+        if `_bucket_`asuf'' > 1 {
+            local _alpha_collisions=1
+            if "`_index_`asuf''" == "" local _index_`asuf'=0
+            local ++_index_`asuf'
+            local asuf "`asuf'_`_index_`asuf''"
+        }
+        local _planned `_planned' `generate'_pess_a`asuf' `generate'_opt_a`asuf'
+        local _pessvars `_pessvars' `generate'_pess_a`asuf'
+        local _optvars `_optvars' `generate'_opt_a`asuf'
+    }
+    // Validate every output before any existing variable can be replaced.
+    _dea_output_check, names(`_planned') ///
+        protect(`inputs' `outputs' `xlo' `xhi' `ylo' `yhi' `dmu') `replacevars'
+
     // Warn if no fuzzy bounds supplied (degenerates to standard DEA)
     if "`xlo'`xhi'`ylo'`yhi'" == "" {
         di as text "Note: No fuzzy bounds specified; all variables treated as crisp."
@@ -504,14 +688,20 @@ program define dea_fuzzy, rclass
     // =========================================================================
     // Build sample
     // =========================================================================
-    tempvar touse
-    mark    `touse'
+    marksample touse, novarlist
     markout `touse' `inputs' `outputs' `xlo' `xhi' `ylo' `yhi'
 
+    local _generated_dmu 0
     if "`dmu'" == "" {
-        cap drop _dmu
-        qui gen str _dmu = "dmu" + string(_n) if `touse'
-        local dmu "_dmu"
+        capture confirm new variable _dmu
+        if _rc {
+            di as error "_dmu already exists; specify dmu(_dmu) to use it or supply another dmu() variable"
+            exit 110
+        }
+        tempvar _automatic_dmu
+        qui gen str32 `_automatic_dmu' = "dmu" + string(_n) if `touse'
+        local dmu "`_automatic_dmu'"
+        local _generated_dmu 1
     }
 
     qui count if `touse'
@@ -534,6 +724,57 @@ program define dea_fuzzy, rclass
     if "`xhi_vars'" == "" local xhi_vars "`inputs'"
     if "`ylo_vars'" == "" local ylo_vars "`outputs'"
     if "`yhi_vars'" == "" local yhi_vars "`outputs'"
+
+    foreach side in x y {
+        if "`side'" == "x" {
+            local _center "`inputs'"
+            local _lo "`xlo_vars'"
+            local _hi "`xhi_vars'"
+        }
+        else {
+            local _center "`outputs'"
+            local _lo "`ylo_vars'"
+            local _hi "`yhi_vars'"
+        }
+        local _j=0
+        foreach v of local _center {
+            local ++_j
+            local l : word `_j' of `_lo'
+            local h : word `_j' of `_hi'
+            quietly count if `touse' & (`l'<0 | `l'>`v' | `v'>`h')
+            if r(N) {
+                di as error "Fuzzy data require 0 <= lower <= center <= upper: `v'"
+                exit 459
+            }
+        }
+    }
+
+    // At the smallest requested alpha, each lower-cut row must have a positive
+    // input and output. Nesting then guarantees the same for every selected cut
+    // and every coordinatewise realization in it. Individual zero entries remain valid.
+    local _first_alpha : word 1 of `alpha'
+    foreach side in x y {
+        local centers "`inputs'"
+        local lowers "`xlo_vars'"
+        if "`side'"=="y" {
+            local centers "`outputs'"
+            local lowers "`ylo_vars'"
+        }
+        tempvar _positive
+        quietly gen byte `_positive'=0 if `touse'
+        local j=0
+        foreach v of local centers {
+            local ++j
+            local l : word `j' of `lowers'
+            quietly replace `_positive'=1 if `touse' & (1-`_first_alpha')*`l'+`_first_alpha'*`v'>0
+        }
+        quietly count if `touse' & `_positive'==0
+        if r(N) {
+            di as error "Each selected lower alpha-cut row requires a positive input and a positive output"
+            di as error "All-zero input/output rows are outside the finite radial fuzzy model"
+            exit 459
+        }
+    }
 
     // =========================================================================
     // Parse alpha list
@@ -562,7 +803,7 @@ program define dea_fuzzy, rclass
     // Header
     // =========================================================================
     di as text "{hline `c(linesize)'}"
-    di as text "dea_fuzzy v1.0 — Fuzzy DEA (α-cut / possibility approach)"
+    di as text "dea_fuzzy v1.1 — Triangular alpha-cut DEA (Kao-Liu best/worst convention)"
     di as text "  `ort_label', `rts_label'"
     di as text "  DMUs: `n_dmus'  |  Inputs: `m_in'  |  Outputs: `m_out'"
     di as text "  α-levels: `alpha'"
@@ -571,43 +812,78 @@ program define dea_fuzzy, rclass
     // =========================================================================
     // Loop over α-levels: create temp vars, call Mata solver
     // =========================================================================
-    local ia = 0
-    foreach a of numlist `alpha' {
-        local ++ia
-
-        // Suffix: round(alpha*100) → 0, 25, 50, 75, 100
-        local asuf = string(round(`a' * 100))
-
-        // Temporary variables to hold results for this α level
-        tempvar _pess_`ia' _opt_`ia'
-        qui gen double `_pess_`ia'' = . if `touse'
-        qui gen double `_opt_`ia''  = . if `touse'
-
-        // Call Mata solver
-        // quietly suppresses per-LP infeasibility warnings from LinearProgram();
-        // a single summary note is printed below if any scores are missing.
-        quietly {
-            mata: _dea_fuzzy_solve(                ///
-                "`inputs'",   "`outputs'",         ///
-                "`xlo_vars'", "`xhi_vars'",        ///
-                "`ylo_vars'", "`yhi_vars'",        ///
-                `a',          "`orientation'",     ///
-                "`rts'",      `tolerance',         ///
-                "`_pess_`ia''", "`_opt_`ia''",     ///
-                "`touse'")
+    tempname _lpstats
+    local _lp_count=0
+    local _lp_retries=0
+    local _lp_infeasible=0
+    local _lp_unbounded=0
+    local _max_residual=0
+    local _check_tol=1e-8
+    local _use_tol=`tolerance'
+    local _grid_retries=0
+    forvalues _pass=1/2 {
+        local ia=0
+        local _pess_temp ""
+        local _opt_temp ""
+        foreach a of numlist `alpha' {
+            local ++ia
+            tempvar _pess_`ia' _opt_`ia'
+            qui gen double `_pess_`ia''=.
+            qui gen double `_opt_`ia''=.
+            local _pess_temp `_pess_temp' `_pess_`ia''
+            local _opt_temp `_opt_temp' `_opt_`ia''
+            quietly {
+                mata: _dea_fuzzy_solve(                           ///
+                    "`inputs'", "`outputs'",                       ///
+                    "`xlo_vars'", "`xhi_vars'",                   ///
+                    "`ylo_vars'", "`yhi_vars'",                   ///
+                    `a', "`orientation'", "`rts'", `_use_tol',     ///
+                    "`_pess_`ia''", "`_opt_`ia''",                 ///
+                    "`touse'", "`_lpstats'")
+            }
+            local _lp_count=`_lp_count'+`_lpstats'[1,1]
+            local _lp_retries=`_lp_retries'+`_lpstats'[1,2]
+            local _lp_infeasible=`_lp_infeasible'+`_lpstats'[1,3]
+            local _lp_unbounded=`_lp_unbounded'+`_lpstats'[1,4]
+            local _max_residual=max(`_max_residual',`_lpstats'[1,6])
+            if `_lpstats'[1,5]>0 {
+                di as error "Fuzzy DEA numerical validation failed at alpha=`a' after retry"
+                di as error "No permanent result variables were changed."
+                exit 498
+            }
+            if "`debug'"!="" di as text "  [alpha=`a'] solver tolerance `_use_tol'; retries " `_lpstats'[1,2]
         }
 
-        // Report infeasible LP count (missing scores) for this α-level
-        qui count if (`_pess_`ia'' == . | `_opt_`ia'' == .) & `touse'
-        if r(N) > 0 {
-            di as text "  Note (α=`a'): `r(N)' LP(s) infeasible; " ///
-                "corresponding scores set to missing."
+        // Compare every available level, bridging missing interior cuts.
+        tempname _grid_bad
+        mata: st_numscalar("`_grid_bad'",_dea_fuzzy_gridcheck("`_pess_temp'","`_opt_temp'","`touse'","`alpha'",`_check_tol'))
+        local _bad=scalar(`_grid_bad')
+        if `_bad'==0 continue, break
+        if `_pass'==2 {
+            di as error "Fuzzy efficiency intervals fail ordering/nesting checks after retry"
+            di as error "No permanent result variables were changed."
+            exit 498
         }
-
-        if "`debug'" != "" {
-            di as text "  [α=`a'] Mata solver completed."
+        local _use_tol=min(`tolerance'/100,1e-12)
+        if `_use_tol'<=0 local _use_tol=`tolerance'
+        local _grid_retries=1
+        di as text "Recomputing alpha grid at tighter tolerance after interval checks..."
+    }
+    local _lp_missing=0
+    forvalues ia=1/`n_alpha' {
+        foreach _kind in pess opt {
+            qui count if `touse' & missing(`_`_kind'_`ia'')
+            local _lp_missing=`_lp_missing'+r(N)
         }
     }
+    if `_lp_missing'>0 {
+        di as text "Note: `_lp_missing' scores unavailable; repeated native status 1/2 is not a mathematical certificate."
+    }
+
+    tempname _summary _summary_pess _summary_opt _summary_complete _summary_obs
+    mata: _dea_fuzzy_summary("`_pess_temp'","`_opt_temp'","`touse'","`alpha'","`_summary' `_summary_pess' `_summary_opt' `_summary_complete' `_summary_obs'","`matrix'"!="")
+    matrix colnames `_summary'=alpha N_pess N_opt N_pair N_complete mean_pess mean_opt min_pess max_pess min_opt max_opt
+    local _n_complete=`_summary'[1,5]
 
     // =========================================================================
     // Save results to permanent named variables
@@ -615,13 +891,18 @@ program define dea_fuzzy, rclass
     local ia = 0
     foreach a of numlist `alpha' {
         local ++ia
-        local asuf = string(round(`a' * 100))
+        local vp : word `ia' of `_pessvars'
+        local vo : word `ia' of `_optvars'
 
-        local vp "`generate'_pess_a`asuf'"
-        local vo "`generate'_opt_a`asuf'"
-
-        // Drop existing (silently)
-        cap drop `vp' `vo'
+        // Publish the validated outputs; replacing existing columns requires replacevars.
+        foreach _drop_output in `vp' {
+            capture confirm variable `_drop_output', exact
+            if !_rc quietly drop `_drop_output'
+        }
+        foreach _drop_output in `vo' {
+            capture confirm variable `_drop_output', exact
+            if !_rc quietly drop `_drop_output'
+        }
 
         qui gen double `vp' = `_pess_`ia'' if `touse'
         qui gen double `vo' = `_opt_`ia''  if `touse'
@@ -630,109 +911,77 @@ program define dea_fuzzy, rclass
         label var `vo' "Fuzzy DEA optimistic efficiency  (α=`a', `rts_label', `ort_label')"
     }
 
-    // =========================================================================
-    // Display: summary table across α-levels
-    // =========================================================================
     di as text ""
-    di as text "Fuzzy DEA Efficiency Summary  [`eff_label']"
-    di as text "{hline 68}"
-    di as text "  α      " ///
-        _col(12) "Pessimistic" ///
-        _col(38) "Optimistic"
-    di as text "         " ///
-        _col(12) "Mean       [Min ,  Max ]" ///
-        _col(38) "Mean       [Min ,  Max ]"
-    di as text "{hline 68}"
-
-    local ia = 0
-    foreach a of numlist `alpha' {
-        local ++ia
-        local asuf = string(round(`a' * 100))
-        local vp "`generate'_pess_a`asuf'"
-        local vo "`generate'_opt_a`asuf'"
-
-        qui sum `vp' if `touse'
-        local mp  = string(r(mean), "%8.4f")
-        local lop = string(r(min),  "%6.4f")
-        local hip = string(r(max),  "%6.4f")
-
-        qui sum `vo' if `touse'
-        local mo  = string(r(mean), "%8.4f")
-        local loo = string(r(min),  "%6.4f")
-        local hio = string(r(max),  "%6.4f")
-
-        di as result "  `a'" ///
-            _col(12) "`mp'  [`lop', `hip']" ///
-            _col(38) "`mo'  [`loo', `hio']"
+    di as text "Fuzzy efficiency summary: `_n_complete'/`n_dmus' DMUs complete at every requested alpha"
+    di as text "Means and ranges use this same cohort; counts show each cut's available endpoints."
+    di as text " alpha       N_pess N_opt N_pair    Mean_pess    Mean_opt"
+    forvalues ia=1/`n_alpha' {
+        di as result %9.6g `_summary'[`ia',1] ///
+            "  " %6.0f `_summary'[`ia',2] " " %6.0f `_summary'[`ia',3] ///
+            " " %6.0f `_summary'[`ia',4] "  " %11.7g `_summary'[`ia',6] ///
+            " " %11.7g `_summary'[`ia',7]
     }
-
-    di as text "{hline 68}"
+    di as text "Ranges and full-precision summaries: r(summary). No alpha-weighted aggregate is computed."
     di as text "Variables created: `generate'_pess_a* (pessimistic)"
     di as text "                   `generate'_opt_a*  (optimistic)"
-
-    // =========================================================================
-    // DMU-level detail (if requested)
-    // =========================================================================
-    if "`detail'" != "" {
-        di as text ""
-        di as text "DMU-level Fuzzy Efficiency  [`eff_label']"
-
-        // Build header
-        local hdr1 "DMU"
-        local hdr2 "---"
+    if `_alpha_collisions' | "`detail'" != "" {
+        di as text "Alpha / result variable mapping (sorted alpha order):"
+        local ia=0
         foreach a of numlist `alpha' {
-            local asuf = string(round(`a' * 100))
-            local hdr1 "`hdr1'  α=`a' (pess/opt)"
-            local hdr2 "`hdr2'  ----------------"
+            local ++ia
+            local vp : word `ia' of `_pessvars'
+            local vo : word `ia' of `_optvars'
+            di as text "  alpha=`a': `vp'  `vo'"
         }
-        di as text "{hline `c(linesize)'}"
-        di as text "`hdr1'"
-        di as text "`hdr2'"
-        di as text "{hline `c(linesize)'}"
-
-        // Print one row per DMU
-        // Loop by observation index to correctly handle DMU names with spaces.
-        forval k = 1/`=_N' {
-            if `touse'[`k'] == 1 {
-                local d_name = `dmu'[`k']
-                local row `"`d_name'"'
-
-                local ia = 0
-                foreach a of numlist `alpha' {
-                    local ++ia
-                    local asuf = string(round(`a' * 100))
-                    local vp "`generate'_pess_a`asuf'"
-                    local vo "`generate'_opt_a`asuf'"
-
-                    local ep_val = `vp'[`k']
-                    local eo_val = `vo'[`k']
-
-                    if `ep_val' == . local ep "     ."
-                    else             local ep = string(`ep_val', "%6.4f")
-
-                    if `eo_val' == . local eo "     ."
-                    else             local eo = string(`eo_val', "%6.4f")
-
-                    local row `"`row'  `ep'/`eo'"'
-                }
-                di as result `"`row'"'
-            }
-        }
-        di as text "{hline `c(linesize)'}"
     }
 
-    di as text "{hline `c(linesize)'}"
+    if "`detail'"!="" {
+        mata: _dea_fuzzy_display("`_pessvars'","`_optvars'","`touse'","`dmu'","`alpha'")
+    }
 
     // =========================================================================
     // Return values
     // =========================================================================
+    if `_generated_dmu' rename `_automatic_dmu' _dmu
+
     return local cmd         "dea_fuzzy"
     return local orientation "`orientation'"
     return local rts         "`rts'"
     return local alpha       "`alpha'"
     return local generate    "`generate'"
+    return local pessvars    "`_pessvars'"
+    return local optvars     "`_optvars'"
+    return local formulation "triangular_kaoliu_basic"
+    return local summary_sample "complete_alpha_grid"
+    return scalar N_complete = `_n_complete'
+    return scalar N_partial = `n_dmus'-`_n_complete'
+    return matrix summary = `_summary'
+    if "`matrix'"!="" {
+        local _columns ""
+        forvalues j=1/`n_alpha' {
+            local _columns `_columns' alpha`j'
+        }
+        matrix colnames `_summary_pess'=`_columns'
+        matrix colnames `_summary_opt'=`_columns'
+        matrix colnames `_summary_complete'=complete
+        matrix colnames `_summary_obs'=observation
+        return matrix eff_pess=`_summary_pess'
+        return matrix eff_opt=`_summary_opt'
+        return matrix complete=`_summary_complete'
+        return matrix obs_index=`_summary_obs'
+    }
+    return scalar n_alpha    = `n_alpha'
     return scalar N          = `n_dmus'
     return scalar m_in       = `m_in'
     return scalar m_out      = `m_out'
+    return scalar tolerance  = `tolerance'
+    return scalar check_tolerance = `_check_tol'
+    return scalar lp_count = `_lp_count'
+    return scalar lp_retries = `_lp_retries'
+    return scalar grid_retries = `_grid_retries'
+    return scalar lp_missing = `_lp_missing'
+    return scalar lp_infeasible = `_lp_infeasible'
+    return scalar lp_unbounded = `_lp_unbounded'
+    return scalar max_primal_violation = `_max_residual'
 
 end

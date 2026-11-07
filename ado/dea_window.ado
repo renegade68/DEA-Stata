@@ -1,4 +1,10 @@
-*! version 1.3.2  20jul2026
+*! version 1.3.8  02nov2026
+*! 2026-11-02: honor tolerance, validate radial LPs, and report panel failures.
+*! 2026-11-01: number selected rows in stable within-period order when dmu() is omitted.
+*! 2026-11-01: reject repeated selected DMU-period keys before replacing results.
+*! 2026-11-01: accept the minimum option abbreviations advertised in help.
+*! 2026-11-01: use shared Form A/B parser; preserve if/in expressions.
+*! 2026-11-01: preflight output names; explicit replacevars; protect model data.
 *! dea_window.ado — Window Analysis DEA
 *!
 *! AUTHORS:
@@ -56,7 +62,7 @@
  */
 
 capture program drop dea_window
-program define dea_window, rclass
+program define dea_window, rclass sortpreserve
     version 16.0
     
     // =========================================================================
@@ -64,41 +70,33 @@ program define dea_window, rclass
     //   Form A: dea_window x1 x2 = y1 y2 [if] [in], dmu() time() [options]
     //   Form B: dea_window [varlist] [if] [in], inputs() outputs() dmu() time() [options]
     // =========================================================================
-    local raw0 `"`0'"'
-    if strpos(`"`raw0'"', "=") > 0 {
-        local _io_inputs ""
-        gettoken _w 0 : 0, parse("=,")
-        while "`_w'" != "=" & "`_w'" != "" {
-            if "`_w'" == "," {
-                di as error "Syntax error: comma before '='"
-                error 198
-            }
-            local _io_inputs `_io_inputs' `_w'
-            gettoken _w 0 : 0, parse("=,")
-        }
-        local _cpos = strpos(`"`0'"', ",")
-        if `_cpos' > 0 {
-            local _pre = substr(`"`0'"', 1, `_cpos')
-            local _post = substr(`"`0'"', `_cpos'+1, .)
-            local 0 `"`_pre' inputs(`_io_inputs') `_post'"'
-        }
-        else {
-            local 0 `"`0', inputs(`_io_inputs')"'
-        }
-    }
-    
-    syntax [varlist] [if] [in], ///
+    _dea_parse_io `0'
+    local 0 `"`r(args)'"'
+
+    syntax [varlist(numeric default=none)] [if] [in], ///
         TIME(varname) ///
         [DMU(varname)] ///
         [Inputs(varlist numeric) ///
          Outputs(varlist numeric) ///
-         RTS(string) ///
-         ORT(string) ORIentation(string) ///
+         Rts(string) ///
+         ORT(string) ORientation(string) ///
          Width(integer 0) ///
          GENerate(string) ///
+         REPLACEVARS      ///
          TOLerance(real 1e-7) ///
          DETail ///
          DEBUG]
+
+    if missing(`tolerance') | `tolerance'<=0 {
+        di as error "tolerance() must be positive and finite"
+        exit 198
+    }
+    capture mata: assert(_dea_nonte_lp_ready()==1)
+    if _rc {
+        quietly findfile _dea_nonte_lp.ado
+        quietly run "`r(fn)'"
+    }
+
     
     // Resolve outputs
     if "`outputs'" == "" {
@@ -143,6 +141,8 @@ program define dea_window, rclass
         exit 198
     }
     
+    confirm numeric variable `time'
+
     // Mark sample — do NOT include dmu in markout (string DMU causes r(109))
     // marksample reads local varlist.  Populate it explicitly because the
     // inputs()/outputs() syntax form has no main varlist.
@@ -150,14 +150,41 @@ program define dea_window, rclass
     marksample touse
     markout `touse' `inputs' `outputs' `time'
 
-    // Auto-generate DMU identifier if not specified
+    // Positional IDs use only selected observations in their incoming order.
+    // Restore the row order before solving so if/in and output rows stay aligned.
+    local _dmu_method "variable"
     if "`dmu'" == "" {
-        tempvar _dmu_auto
-        qui bysort `time' (`touse'): gen long `_dmu_auto' = _n if `touse'
+        tempvar _dmu_auto _panel_order
+        qui gen double `_panel_order' = _n
+        qui bysort `time' (`_panel_order'): gen long `_dmu_auto' = sum(`touse') if `touse'
+        qui sort `_panel_order'
         local dmu "`_dmu_auto'"
+        local _dmu_method "position"
+        di as text "Note: dmu() omitted; periods are matched by selected within-period row order."
     }
 
     qui replace `touse' = 0 if missing(`dmu')   // handles string("") and numeric(.)
+
+    // Validate only the final selected sample, before any output replacement.
+    foreach _side in inputs outputs {
+        tempvar _positive_side
+        quietly generate byte `_positive_side'=0 if `touse'
+        foreach _v of local `_side' {
+            quietly count if `touse' & `_v'<0
+            if r(N) {
+                di as error "DEA panel quantities must be nonnegative"
+                exit 459
+            }
+            quietly replace `_positive_side'=1 if `touse' & `_v'>0
+        }
+        quietly count if `touse' & `_positive_side'==0
+        if r(N) {
+            di as error "each selected DMU-period requires a positive input and output"
+            exit 459
+        }
+    }
+
+    _dea_panel_check, dmu(`dmu') time(`time') touse(`touse')
 
     // Get unique time periods
     qui levelsof `time' if `touse', local(periods)
@@ -202,16 +229,27 @@ program define dea_window, rclass
     di as text "Number of windows: " as result "`n_windows'"
     di as text "{hline 70}"
 
+    local _planned `generate'_mean `generate'_sd
+    forvalues w = 1/`n_windows' {
+        forvalues p = 1/`width' {
+            local _planned `_planned' `generate'_w`w'_p`p'
+        }
+    }
+    // Validate every output before any existing variable can be replaced.
+    _dea_output_check, names(`_planned') ///
+        protect(`inputs' `outputs' `dmu' `time') `replacevars'
+    local _replace_outputs "`r(existing)'"
+    foreach _ov of local _replace_outputs {
+        quietly drop `_ov'
+    }
+
     // Prepare generated variables. Scores are stored by window and by the
     // observation's position within that window.
     forvalues w = 1/`n_windows' {
         forvalues p = 1/`width' {
-            capture drop `generate'_w`w'_p`p'
             qui gen double `generate'_w`w'_p`p' = .
         }
     }
-    capture drop `generate'_mean
-    capture drop `generate'_sd
     qui gen double `generate'_mean = .
     qui gen double `generate'_sd = .
     
@@ -231,13 +269,22 @@ program define dea_window, rclass
     di as text ""
     di as text "{hline 70}"
 
+    local _n_failed=r(n_failed)
+    local _n_attempted=r(n_attempted)
+    local _n_failed_obs=r(n_failed_obs)
+
     // Return values — capture Mata-set r() scalars before rclass posts results
     local _mean_eff = r(mean_eff)
     local _sd_eff   = r(sd_eff)
     local _n_obs    = r(n_obs)
 
+    return local dmu_method "`_dmu_method'"
     return local orientation "`orientation'"
     return local rts "`rts'"
+    return scalar n_failed=`_n_failed'
+    return scalar n_attempted=`_n_attempted'
+    return scalar n_failed_obs=`_n_failed_obs'
+    return scalar tolerance=`tolerance'
     return scalar n_periods = `n_periods'
     return scalar n_dmus = `n_dmus'
     return scalar width = `width'
@@ -289,7 +336,7 @@ void _dea_dmu_read_win(string scalar   dmu_var,
     }
     else {
         dmu_ids    = st_data(., dmu_var, touse)
-        dmu_labels = strofreal(dmu_ids)
+        dmu_labels = strtrim(strofreal(dmu_ids,"%21.17g"))
     }
 }
 
@@ -324,7 +371,7 @@ void _dea_window_compute(string scalar inputs,
     real scalar n_all, m, s, n_dmus, n_windows, n_win
     real scalar w, p, i, k, pos, ii, p_in_window, obs_row
     real scalar start_period, end_period, dmu_id, period_id, eff
-    real scalar lw, row_mean, row_sd
+    real scalar lw, row_mean, row_sd, n_attempted, n_failed
     string scalar lw_fmt, lw_sep, dmu_lab, score_var
 
     // ── Load data ─────────────────────────────────────────────────────────────
@@ -369,6 +416,8 @@ void _dea_window_compute(string scalar inputs,
         }
     }
 
+    n_attempted=0; n_failed=0
+
     // ── Process each window ───────────────────────────────────────────────────
     for (w = 1; w <= n_windows; w++) {
         start_period = periods[w]
@@ -399,6 +448,8 @@ void _dea_window_compute(string scalar inputs,
 
             eff = _dea_window_efficiency(x0, y0, X_win, Y_win,
                                           orientation, rts, tol)
+            n_attempted++
+            if (eff>=.) n_failed++
             p_in_window = selectindex(periods :== period_id)[1] - w + 1
             obs_row = obs_all[idx_window[i]]
             score_var = gen_prefix + "_w" + strofreal(w) + "_p" + strofreal(p_in_window)
@@ -426,11 +477,11 @@ void _dea_window_compute(string scalar inputs,
     printf("Efficiency Scores by Window\n")
     printf("{hline 70}\n")
 
-    printf(lw_fmt + " %8s |", "DMU", "Period")
+    printf(lw_fmt + " %21s |", "DMU", "Period")
     for (w = 1; w <= n_windows; w++) printf(" Window%g", w)
     printf(" |   Mean     SD\n")
 
-    printf(lw_fmt + " %8s |", lw_sep, "--------")
+    printf(lw_fmt + " %21s |", lw_sep, "-"*21)
     for (w = 1; w <= n_windows; w++) printf(" -------")
     printf(" | ------- ------\n")
 
@@ -452,7 +503,7 @@ void _dea_window_compute(string scalar inputs,
                 }
             }
 
-            printf(lw_fmt + " %8.0f |", dmu_lab, results[k, 2])
+            printf(lw_fmt + " %21.17g |", dmu_lab, results[k, 2])
             for (w = 1; w <= n_windows; w++) {
                 if (results[k, 2 + w] != .) printf(" %7.4f", results[k, 2 + w])
                 else                         printf(" %7s", ".")
@@ -500,9 +551,13 @@ void _dea_window_compute(string scalar inputs,
         }
     }
 
-    st_numscalar("r(mean_eff)", mean(all_eff))
-    st_numscalar("r(sd_eff)",   sqrt(variance(all_eff)))
+    st_numscalar("r(mean_eff)", rows(all_eff)>0 ? mean(all_eff) : .)
+    st_numscalar("r(sd_eff)", rows(all_eff)>1 ? sqrt(variance(all_eff)) : .)
     st_numscalar("r(n_obs)",    rows(all_eff))
+    st_numscalar("r(n_attempted)",n_attempted)
+    st_numscalar("r(n_failed)",n_failed)
+    st_numscalar("r(n_failed_obs)",sum(st_data(.,gen_prefix+"_mean",touse):>=.))
+    if (n_failed>0) printf("  Note: %g of %g window scores are unavailable; summaries use available scores.\n",n_failed,n_attempted)
 }
 
 
@@ -525,14 +580,25 @@ real scalar _dea_window_efficiency(real rowvector x0,
     real colvector b_ineq, b_eq
     class LinearProgram scalar S
 
+    real matrix X, Y
+    real rowvector x, y, sx, sy
+    real scalar j, rc
+
+    // Include the evaluated row when balancing cross-period constraints.
+    // Work on copies: reference arrays and the caller's observations are unchanged.
+    sx=colmax(X_ref \ x0); sy=colmax(Y_ref \ y0)
+    for (j=1; j<=cols(sx); j++) if (sx[j]==0) sx[j]=1
+    for (j=1; j<=cols(sy); j++) if (sy[j]==0) sy[j]=1
+    X=X_ref:/sx; Y=Y_ref:/sy; x=x0:/sx; y=y0:/sy
+
     n = rows(X_ref)
     m = cols(X_ref)
     s = cols(Y_ref)
 
     if (orientation == "input") {
         c      = (J(1, n, 0), 1)
-        A_ineq = (X_ref', -x0') \ (-Y_ref', J(s, 1, 0))
-        b_ineq = J(m, 1, 0) \ (-y0')
+        A_ineq = (X', -x') \ (-Y', J(s, 1, 0))
+        b_ineq = J(m, 1, 0) \ (-y')
         lb     = J(1, n + 1, 0)
         ub     = J(1, n + 1, .)
         A_eq   = J(0, n + 1, .)
@@ -552,8 +618,8 @@ real scalar _dea_window_efficiency(real rowvector x0,
     }
     else {
         c      = (J(1, n, 0), -1)
-        A_ineq = (X_ref', J(m, 1, 0)) \ (-Y_ref', y0')
-        b_ineq = x0' \ J(s, 1, 0)
+        A_ineq = (X', J(m, 1, 0)) \ (-Y', y')
+        b_ineq = x' \ J(s, 1, 0)
         lb     = (J(1, n, 0), 1)
         ub     = J(1, n + 1, .)
         A_eq   = J(0, n + 1, .)
@@ -579,15 +645,16 @@ real scalar _dea_window_efficiency(real rowvector x0,
     if (rows(A_eq) > 0) S.setEquality(A_eq, b_eq)
     S.setBounds(lb, ub)
     S.setTrace("off")
-    (void) S.optimize()
+    rc = _dea_nonte_optimize(S,tol)
 
-    if (S.converged() && S.errorcode() == 0) {
+    if (rc == 0 & S.value()<.) {
         eff = (orientation == "input" ? S.value() : 1 / (-S.value()))
     }
     else {
         eff = .
     }
 
+    if (eff<=0 | eff>=.) eff=.
     return(eff)
 }
 

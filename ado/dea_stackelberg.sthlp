@@ -1,6 +1,7 @@
 {smcl}
+{* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* version 1.1.1  02may2026}{...}
+{* version 1.2.0  02nov2026}{...}
 {viewerjumpto "Related article" "dea_stackelberg##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_network" "help dea_network"}{...}
@@ -8,7 +9,7 @@
 {title:Title}
 
 {phang}
-{bf:dea_stackelberg} {hline 2} Stackelberg-style two-stage DEA
+{bf:dea_stackelberg} {hline 2} Two-stage DEA with optional CRS leader-follower optimization
 
 {marker syntax}{...}
 {title:Syntax}
@@ -31,10 +32,13 @@
 {syntab:Optional}
 {synopt:{opt dmu(varname)}}DMU identifier variable{p_end}
 {synopt:{opt leader(string)}}leader stage: {cmd:stage1} (default) or {cmd:stage2}{p_end}
+{synopt:{cmd:method(}{it:string}{cmd:)}}{cmd:independent} (default) or {cmd:noncooperative}{p_end}
+{synopt:{cmd:matrix}}return component, status, weight and reference matrices{p_end}
 {synopt:{opt rts(string)}}{cmd:crs} (default) or {cmd:vrs}{p_end}
 {synopt:{opt generate(string)}}prefix for generated variables; default {cmd:_stack}{p_end}
-{synopt:{opt tolerance(#)}}LP solver tolerance; default {cmd:1e-7}{p_end}
-{synopt:{opt detail}}accepted for interface consistency{p_end}
+{synopt:{cmd:replacevars}}explicitly replace existing result variables; model data and identifiers remain protected{p_end}
+{synopt:{opt tolerance(#)}}positive finite LP residual tolerance; default {cmd:1e-7}{p_end}
+{synopt:{opt detail}}show benchmark and stage availability diagnostics{p_end}
 {synopt:{opt debug}}display debug information{p_end}
 {synoptline}
 
@@ -42,45 +46,66 @@
 {title:Description}
 
 {pstd}
-{cmd:dea_stackelberg} implements a leader-follower-style two-stage DEA
-decomposition inspired by supply-chain and network DEA models such as
-Liang et al. (2006), Li et al. (2012), and Tavana and Khalili-Damghani
-(2014). The command reports stage-specific DEA efficiencies under a selected
-leadership ordering. It is intended as a pragmatic Stackelberg-style
-diagnostic, not as a full fuzzy, alpha-cut, Monte-Carlo, or bilevel
-backward-induction optimization model.
+{cmd:dea_stackelberg} evaluates the two-stage structure X -> Z -> Y.
+All first-stage outputs are the only second-stage inputs. Two explicitly
+selected methods are available.
 
 {pstd}
-{ul:Production structure:}
-
-{p 8 17 2}
-Stage 1: X → Z  (inputs to intermediates){break}
-Stage 2: Z → Y  (intermediates to outputs)
-
-{pstd}
-{ul:Computation:}
-
-{phang2}{bf:1.} Stage 1 efficiency is computed from X to Z.{p_end}
-{phang2}{bf:2.} Stage 2 efficiency is computed from Z to Y.{p_end}
-{phang2}{bf:3.} {opt leader(stage1)} or {opt leader(stage2)} determines which
-stage score is reported as the leader and which as the follower.{p_end}
+{cmd:method(independent)} preserves the historical default: compute input-oriented
+DEA separately for X -> Z and Z -> Y, label the selected stage as leader, and
+report the product. Changing {cmd:leader()} changes labels only. These scores
+are independent-stage diagnostics and do not estimate a leader-follower game.
+CRS and VRS are supported for this method.
 
 {pstd}
-{ul:Two leader configurations:}
-
-{p2colset 9 20 22 2}
-{p2col:{cmd:stage1}}Stage 1 is reported as the leader (e.g., upstream
-production is treated as the leading stage); Stage 2 is reported as the
-follower.{p_end}
-{p2col:{cmd:stage2}}Stage 2 is reported as the leader (e.g., downstream
-demand is treated as the leading stage); Stage 1 is reported as the
-follower.{p_end}
+{cmd:method(noncooperative)} implements the CRS leader-follower DEA approach of
+Liang, Cook, and Zhu (2008). First obtain the selected leader's independent
+optimal efficiency. Then hold that efficiency fixed and maximize the follower's
+efficiency using common intermediate weights. The follower may choose among
+weights that preserve the leader optimum; an arbitrary leader weight vector
+is not frozen. The two leader choices can yield different decompositions.
+This option currently requires {cmd:rts(crs)}; VRS requests return error 198.
 
 {pstd}
-Results are shown together with independent stage-efficiency benchmarks.
-Because the current implementation does not solve a nested leader-follower
-program, large differences should be interpreted as stage-ordering diagnostics
-rather than as structural estimates of a Stackelberg equilibrium.
+If only one intermediate column is positive anywhere in the selected sample,
+the CRS model reduces to independent stage optima. The command uses this exact
+model reduction before attempting a full joint LP, obtains shared weights from
+two multiplier LPs, and checks them against the leader-fixed model. This is a
+structural calculation route, not a replacement after an optimization failure.
+Zero intermediate columns have zero weights in this route. With multiple active
+intermediates, the full joint LP is used. The returned route identifies which
+calculation was attempted.
+
+{pstd}
+With nonnegative weights (v,w,u), all reference DMUs satisfy wZ <= vX and
+uY <= wZ. If Stage 1 leads, normalize wZ0=1, impose wZ0=e1*vX0, and maximize
+uY0. If Stage 2 leads, normalize vX0=1, impose uY0=e2*wZ0, and maximize wZ0.
+Here e1 or e2 is the corresponding independent leader optimum. These positive
+normalizations are equivalent to the CRS ratio models. No intercept-based VRS
+extension or fuzzy/bilevel-general-purpose optimization is implied.
+
+{pstd}
+Independent benchmarks are always returned. For the noncooperative method, a
+failed follower LP leaves the leader and available benchmarks intact, while
+follower and overall scores are missing. No independent follower score is
+substituted. If the leader score is unavailable or nonpositive, no follower LP
+is attempted. An unavailable independent follower benchmark does not block a
+successful joint LP when the leader benchmark is available.
+
+{pstd}
+All quantities must be nonnegative, with at least one positive variable in
+each of X, Z, and Y for every selected observation. Missing quantities and
+explicitly missing IDs are excluded. The selected sample is also the reference
+sample. An empty sample returns 2000. Invalid data, tolerance, or unsupported
+method/RTS combinations are checked before replacing existing results.
+
+{pstd}
+Positive column and constraint scaling preserve the LP. Native solutions must
+converge and pass constraint/bound checks at {cmd:tolerance()}; noncooperative benchmarks
+and single-intermediate multiplier solves use an internal cap of 1e-12.
+Independent-mode and full follower LPs use a cap of 1e-8, always no larger than
+the requested tolerance. This is not an exact optimality certificate.
+Scores are not clipped and no alternative engine is silently substituted.
 
 {marker options}{...}
 {title:Options}
@@ -90,8 +115,8 @@ rather than as structural estimates of a Stackelberg equilibrium.
 {cmd:stage2}.
 
 {phang}
-{opt detail} is accepted for interface consistency. The current implementation
-displays the stage comparison table by default.
+{opt detail} adds independent benchmarks, component availability, and follower
+solve status to the stage table. {cmd:debug} prints per-observation scores.
 
 {phang}
 {opt generate(string)} sets the prefix for generated variables (default {cmd:_stack}).
@@ -110,10 +135,47 @@ The following variables are created:
 {synoptset 20 tabbed}{...}
 {p2col 5 20 24 2: Scalars}{p_end}
 {synopt:{cmd:r(n)}}number of DMUs{p_end}
+{synopt:{cmd:r(tolerance)}}requested residual tolerance{p_end}
+{synopt:{cmd:r(n_failed_overall)}}missing overall scores{p_end}
+{synopt:{cmd:r(n_failed_stage1)}}missing reported Stage 1 scores{p_end}
+{synopt:{cmd:r(n_failed_stage2)}}missing reported Stage 2 scores{p_end}
+{synopt:{cmd:r(n_failed_indep1)}}missing independent Stage 1 benchmarks{p_end}
+{synopt:{cmd:r(n_failed_indep2)}}missing independent Stage 2 benchmarks{p_end}
+{synopt:{cmd:r(n_failed_follower_lp)}}attempted but unavailable follower solves, including the reduced route{p_end}
+{synopt:{cmd:r(n_single_link)}}DMUs attempting the single-intermediate reduction{p_end}
 
 {p2col 5 20 24 2: Macros}{p_end}
+{synopt:{cmd:r(method)}}independent or noncooperative{p_end}
+{synopt:{cmd:r(formulation)}}independent_ordering or noncooperative_crs{p_end}
+{synopt:{cmd:r(orientation)}}input{p_end}
 {synopt:{cmd:r(leader)}}leader stage used{p_end}
 {synopt:{cmd:r(rts)}}returns to scale used{p_end}
+
+{pstd}
+With {cmd:matrix}, {cmd:r(efficiencies)} reports overall, stage1, stage2 in
+selected observation order. {cmd:r(status)} uses the same columns: 1 available,
+0 missing. {cmd:r(lambda_stage1)} and {cmd:r(lambda_stage2)} hold the independent
+benchmark reference intensities (evaluator rows, reference-DMU columns).
+For {cmd:method(noncooperative)}, {cmd:r(weights_input)},
+{cmd:r(weights_intermediate)}, and {cmd:r(weights_output)} contain the joint
+(v,w,u) in original units. They are missing if the joint solve is unavailable.
+{cmd:r(follower_status)} is 0 if no positive finite leader score is available,
+1 if the follower LP was attempted but unavailable, and 2 if accepted.
+{cmd:r(follower_route)} is 0 when not attempted, 1 for the full joint LP, or
+2 for the single-intermediate reduction, including unsuccessful attempts.
+Weights need not be unique even if the optimal stage scores are unique.
+
+{pstd}
+{bf:Protecting existing data.} All output names are checked before results are
+created. An existing result variable causes an error unless {cmd:replacevars}
+is specified. The option applies only to variables produced by the current
+command; it does not remove other variables sharing the prefix. Replacement
+recreates whole result columns, including their storage types and labels;
+observations not scored by the command do not retain old scores. Variables
+used as model data or identifiers cannot be replaced, even with
+{cmd:replacevars}. Invalid or duplicate output names are rejected before any
+existing result column is changed. This name check does not promise rollback
+of later computation or file-write errors.
 
 {marker examples}{...}
 {title:Examples}
@@ -147,19 +209,33 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 
 {pstd}Reverse: downstream stage leads{p_end}
 {phang2}{cmd:. dea_stackelberg, inputs(raw labor) intermediates(parts) ///}{p_end}
-{phang2}{cmd:    outputs(sales) dmu(unit) leader(stage2) rts(vrs)}{p_end}
+{phang2}{cmd:    outputs(sales) dmu(unit) leader(stage2) rts(vrs) replacevars}{p_end}
 
 {pstd}Compare Stackelberg vs. independent efficiency{p_end}
 {phang2}{cmd:. dea_stackelberg, inputs(raw labor) intermediates(parts) ///}{p_end}
-{phang2}{cmd:    outputs(sales) dmu(unit)}{p_end}
+{phang2}{cmd:    outputs(sales) dmu(unit) replacevars}{p_end}
 {phang2}{cmd:. list unit _stack_leader _stack_follower _stack_overall _stack_indep1 _stack_indep2}{p_end}
 
+
+{pstd}CRS shared-weight leader-follower optimization{p_end}
+{phang2}{cmd:. dea_stackelberg, inputs(raw labor) intermediates(parts) outputs(sales) dmu(unit) method(noncooperative) leader(stage1) gen(game1) matrix detail}{p_end}
+{phang2}{cmd:. matrix list r(follower_status)}{p_end}
+{phang2}{cmd:. dea_stackelberg, inputs(raw labor) intermediates(parts) outputs(sales) dmu(unit) method(noncooperative) leader(stage2) gen(game2) matrix detail}{p_end}
 
 {phang2}{cmd:. restore}{p_end}
 {* DEAS_HELP_EXAMPLES_END}{...}
 
 {marker references}{...}
 {title:References}
+
+{phang}
+Liang, L., W. D. Cook, and J. Zhu. 2008. DEA models for two-stage processes:
+Game approach and efficiency decomposition. {it:Naval Research Logistics}
+55(7): 643--653.
+{browse "https://doi.org/10.1002/nav.20308":doi:10.1002/nav.20308}
+
+{pstd}The following references provide broader supply-chain/network or fuzzy-model
+background; they do not define every option implemented here.{p_end}
 
 {phang}
 Liang, L., F. Yang, W.D. Cook, and J. Zhu. 2006. DEA models for supply chain

@@ -56,8 +56,8 @@ Game-theoretic DEA ideas are useful when:
 {synoptline}
 {synopt:{helpb dea_crossgame}}Cross-efficiency game and strategy comparison{p_end}
 {synopt:{helpb dea_nash}}Nash-bargaining-style allocation diagnostic{p_end}
-{synopt:{helpb dea_stackelberg}}Stackelberg-style two-stage ordering diagnostic{p_end}
-{synopt:{helpb dea_cooperative}}Cooperative-game coalition and Shapley-style analysis{p_end}
+{synopt:{helpb dea_stackelberg}}Independent stages or CRS leader-follower DEA{p_end}
+{synopt:{helpb dea_cooperative}}Additive fixed-frontier game; exact Shapley=DEA score{p_end}
 {synoptline}
 
 
@@ -80,19 +80,19 @@ Game-theoretic DEA ideas are useful when:
 secondary weight-selection goals affect rankings. Use aggressive, benevolent,
 or Nash-style strategies as sensitivity diagnostics.{p_end}
 
-{p2col:{bf:Nash-style allocation}}When DMUs can negotiate or share resources
-and you want a simple way to compare disagreement points, cooperative-efficiency
-proxies, and allocated gains. Interpret the output as a Nash-bargaining-style
-diagnostic rather than a full axiomatic Nash solution.{p_end}
+{p2col:{bf:Nash-style allocation}}Historical scenario transform and capped proportional
+allocation of DEA-score gains. The cap can leave gains unallocated. No
+centralized DEA or Nash-product optimization is performed.{p_end}
 
 {p2col:{bf:Stackelberg-style ordering}}When a two-stage process has an upstream
-or downstream stage that may be treated as leading the interpretation. The
-current command reports stage efficiencies under a selected ordering; it is not
-a full bilevel backward-induction solver.{p_end}
+or downstream stage that may be treated as leading the interpretation. The default reports independent stage efficiencies under a selected ordering.
+{cmd:method(noncooperative)} instead fixes the selected leader's optimum and
+optimizes its follower with shared intermediate weights under CRS.{p_end}
 
-{p2col:{bf:Shapley-style coalition analysis}}When you want to examine how each
-DMU contributes to coalitions and to summarize those contributions. Computation
-can be expensive because the number of coalitions grows as 2^n.{p_end}
+{p2col:{bf:Additive Shapley analysis}}The fixed-frontier game has
+v(S)=sum of member efficiencies, so exact Shapley values equal individual DEA
+scores and contributions are zero. It does not measure pooling synergies.
+Only n initial LPs are required; detail listings are limited to n<=15.{p_end}
 {p2colreset}{...}
 
 
@@ -123,10 +123,10 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 {pstd}{bf:1. Cross-Efficiency Game} (compare strategies):{p_end}
 {phang2}{cmd:. dea_crossgame, inputs(x1 x2) outputs(y1 y2) dmu(dmu_id) strategy(all)}{p_end}
 
-{pstd}{bf:2. Nash-style allocation} (resource-sharing intuition):{p_end}
+{pstd}{bf:2. Nash-style allocation} (historical capped scenario):{p_end}
 {phang2}{cmd:. dea_nash, inputs(x1 x2) outputs(y1 y2) dmu(dmu_id)}{p_end}
 
-{pstd}{bf:3. Shapley-style coalition analysis} (marginal contribution):{p_end}
+{pstd}{bf:3. Shapley-style coalition analysis} (additive fixed-frontier game):{p_end}
 {phang2}{cmd:. dea_cooperative, inputs(x1 x2) outputs(y1 y2) dmu(dmu_id)}{p_end}
 
 {pstd}{bf:4. Stackelberg-style ordering} (two-stage diagnostic):{p_end}
@@ -152,8 +152,9 @@ allocation diagnostics.
 
 {pstd}
 {bf:Stackelberg games:} Sequential games with a leader and follower. The
-provided Stackelberg-style command uses this vocabulary to organize two-stage
-DEA scores; it does not claim to solve a full nested Stackelberg program.
+command defaults to independent stage ordering. Its optional
+{cmd:method(noncooperative)} implements the CRS two-stage DEA leader-follower
+model; it is not a general-purpose nested optimization solver.
 
 
 

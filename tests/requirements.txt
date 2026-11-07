@@ -1,0 +1,4 @@
+# For the public numerical regression suites; use a separate Python environment.
+# The runner, publication audit and portability tests use the standard library.
+numpy
+scipy

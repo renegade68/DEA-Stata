@@ -1,0 +1,171 @@
+DEA installation and verification (06 Nov 2026)
+
+1. Copy/use the entire ado/ directory as one matched package.
+   It contains 74 ado/help/do files, including _dea_recovery.ado,
+   _dea_weak_bound.ado and the matching common simplex/adapters.
+   Do not install only dea.ado or mix helpers from an earlier release.
+2. Start a fresh Stata 16+ session, or save your data and then use clear all.
+   Mata structures changed during earlier development. Hot replacement of
+   arbitrary older loaded packages is not an ABI compatibility guarantee.
+3. Point adopath at this repository's absolute ado path:
+       adopath ++ "/absolute/path/to/DEA-Stata/ado"
+       which dea
+       findfile _dea_recovery.ado
+       findfile _dea_simplex.ado
+       findfile _dea_weak_bound.ado
+       findfile dea.sthlp
+   Confirm that each path belongs to the same package directory.
+   dea should report version 2.0.73; simplex source is 2.0.25.
+   The LP adapter is 0.4.9; MILP is 1.2.7. Simplex readiness is 16,
+   and adapter readiness is 9. Copy the complete matched package.
+4. Run the self-contained example below in an empty session:
+       clear
+       input id x y
+       1 1 1
+       2 2 4
+       3 4 2
+       end
+       dea x=y, dmu(id) engine(simplex) stage(2) recoverylog gen(score)
+       matrix list r(recovery_stats)
+       matrix list r(recovery_log)
+       assert r(recovery_stats)[1,1]==6
+       assert rowsof(r(recovery_log))==6
+       assert colsof(r(recovery_log))==25
+       assert score<.
+       matrix list r(stage_linkage)
+       assert colsof(r(stage_linkage))==30
+       assert r(n_stage_link_adjusted)==0
+       help dea
+5. recoverylog is OFF by default. Minimum abbreviation is recoveryl.
+   Detail is capped at min(c(matsize),10000); counts include omitted rows.
+   Native-only runs have zero counts and no recovery_log matrix.
+   Unsupported model combinations are rejected, not silently ignored.
+   Existing result-variable replacement and saving() rules still apply.
+6. Reproduce the dedicated contract/byte-parity test from tests/:
+       python test_recoverylog.py --stata /path/to/stata-mp \
+         --output /new/output/directory --baseline-ado /frozen/compatible/ado \
+         --fixture fixtures/weak_units2.csv
+   Requires NumPy/SciPy and licensed Stata 16+. Faults run in private copies.
+   The synthetic units2 weak-disposal recovery example is included in tests/fixtures/.
+
+The repository currently uses local-folder installation, not net install.
+Copy all 74 ado/help/do files together. Keep a complete backup of the previous
+package before replacing it; restore that complete package if rolling back.
+These commands verify a local installation and do not publish anything.
+
+TE domain correction (2.0.63): selected inputs/outputs must be nonnegative,
+with one positive input and output per selected DMU. Invalid selected quantities
+stop with r(459) before outputs are changed. Individual zeros and zero columns
+are allowed; if/in and missing required quantities are resolved first.
+Dedicated check: tests/test_te_domain.py --stata /path/to/stata-mp
+  --output /new/output --baseline-ado /frozen/compatible/ado
+Requires NumPy/SciPy. Also retain test_recoverylog.py for the diagnostic contract.
+
+Legacy interaction check: tests/test_te_legacy_boundary.py with the same three
+arguments. The internal IDEA entry context is not a public syntax option.
+
+The three Python comparison scripts require a frozen baseline with matching
+pre-existing numeric return contracts. Use the validated P3 baseline for
+installation checks. Domain tests use a valid-data baseline and deliberately
+check changed rejection behavior separately. They are development tests, not
+required commands for ordinary DEA users.
+
+Inverse validation update (simplex 2.0.17): both inverse identities are checked,
+with a conservative fast path and compensated fallback. Copy the entire matched
+74-file package and use the documented fresh-session/clear-all procedure.
+Dedicated regression: tests/test_inverse_validation.py --stata /path/to/stata-mp
+  --output /new/output/directory
+Requires NumPy; exact Fraction checks use the actual input doubles. See
+tests/INVERSE_VALIDATION.txt for scope, boundary fixtures and numerical limits.
+
+Failure-only precision recovery (simplex 2.0.22): use the entire matched 74-file
+package and the same fresh-session/clear-all upgrade procedure. Accepted existing
+solutions are retained; a failed candidate may be refined and additionally checked.
+For development validation, run tests/test_precision_recovery.py and
+tests/test_precision_arithmetic.py with --stata /path/to/stata-mp and
+--output /new/output/directory (a different new directory for each command).
+Both require NumPy/SciPy (the shared test harness imports SciPy); exact arithmetic uses Python's standard-library Fraction.
+See tests/PRECISION_RECOVERY.txt for the finite supported verification ranges.
+
+Wide recovery and optional exact row scaling (simplex 2.0.22, contract 0.4.6):
+replace the complete matched 74-file runtime/help set, then use a fresh session
+or save data and clear all as documented above. Current simplex readiness is 16; old cached code
+must not be mixed with individual new files. Default scaling(none) is unchanged.
+Optional scaling(row)/lpscaling(row) can alter previously accepted numerical
+results because its initial representation now uses reversible binary scaling.
+Run tests/test_wide_scaling.py alongside the precision tests. It uses only
+packaged fixtures, NumPy/SciPy and licensed Stata 16+; see tests/WIDE_SCALING.txt.
+
+Certified pricing and repeat control (simplex 2.0.22):
+the same matched 74-file installation rule applies. Readiness 13 reloads the
+compatible previous Mata engine through dea, standalone LP/MILP and weak DDF
+entry points. For a complete old package with cached ado programs, retain the
+documented fresh-session or save-data/clear-all upgrade procedure.
+Run:
+  python3 tests/test_precision_pricing.py --stata /path/to/stata-mp --output /new/output/directory
+It checks packaged cutoff boundaries using exact rational arithmetic and
+positive LP controls for cycle recovery and retained reference-weight choices.
+Requires NumPy/SciPy and licensed Stata 16+. Instrumentation uses a private copy;
+the installed engine has no test counters. See tests/PRECISION_PRICING.txt.
+
+Original-column reconstruction after blocked Phase-1 pivots (simplex 2.0.22):
+use the complete matched 74-file runtime/help installation. Readiness 13 detects
+the compatible old Mata-only engine. A fully cached older package still follows
+the save-data/clear-all or fresh-session procedure documented above.
+Run:
+  python3 tests/test_reconstruction.py --stata /path/to/stata-mp --output /new/output/directory
+This checks exact original-unit witnesses, earlier-result priority, total work,
+single recovery records, failed-rebuild guards and the 4096 quality boundary.
+Reconstruction does not guarantee a solution to every LP and is not a promise
+of faster computation. See tests/RECONSTRUCTION.txt.
+
+Exact duplicate recovery (simplex 2.0.22, contract 0.4.6, MILP 1.2.4):
+Install the entire matched 74-file runtime/help set. Readiness 13 and six helper
+presence checks replace compatible old Mata-only engines and detect missing
+duplicate helpers at the DEA, LP, weak-disposal and MILP entry points.
+For a fully cached older package, save data and use clear all or a fresh session
+as described above; changing adopath alone does not replace cached programs.
+Run:
+  python3 tests/test_duplicate_recovery.py --stata /path/to/stata-mp --output /new/output/directory
+This uses packaged exact inputs and expected previous outputs, validates new
+original-unit recoveries, and checks rejected near-duplicates, false certificates,
+bounded work, iteration accounting and logging OFF/ON parity. It requires
+NumPy/SciPy. No research folder or personal ado installation is required.
+See tests/DUPLICATE_RECOVERY.txt for the finite validation scope and limitations.
+
+At the DEA, LP, MILP and weak-disposal entry points, stale or incomplete simplex
+libraries are rejected after attempted reload with
+r(498) and a matched-package installation message. This detects version/helper
+inconsistency; it is not a cryptographic check of manually edited code.
+
+Successful-basis quality checks (simplex 2.0.23, contract 0.4.7):
+follow the same complete-package/fresh-session procedure. The result structure
+now carries final basis columns; arbitrary hot replacement is unsupported.
+Missing or stale helpers detected by the loaders cause reload or r(498);
+a missing required file causes r(601). Resolve all files from the same ado path.
+Run tests/test_success_quality.py with --stata and a new --output directory.
+See tests/SUCCESS_QUALITY.txt for corrected-result and retain-policy scope.
+Earlier failure-only descriptions above are historical; an initial success
+now proceeds to this additional quality check before being returned.
+
+Public lp 2.0.3 reloads a partly cleared LP adapter before repeat calls.
+Direct internal _dea_lpcontract calls reject an incomplete adapter with r(498);
+save data, clear all, and reload the complete package to restore it.
+
+Independent-row recovery (simplex 2.0.24, contract 0.4.8, public lp 2.0.4):
+Install the complete matched package. Simplex readiness 15 and adapter readiness 8
+ensure stale or incomplete helpers are reloaded or explicitly rejected.
+Use a fresh Stata session,or save the data and clear all before replacing code.
+Run tests/test_row_recovery.py with --stata and a new --output directory.
+See tests/ROW_RECOVERY.txt. Earlier version-specific paragraphs are historical.
+
+Stage-link integration (current simplex 2.0.25, contract 0.4.9, lp 2.0.5):
+Install all 74 files. Current readiness values are simplex 16, LP adapter 9, weak 6.
+Use the fresh-session/save-and-clear-all procedure above. Earlier versioned
+paragraphs describe historical changes, not the currently matched package.
+Run tests/test_stage_linkage.py --stata /path/to/stata-mp --output /new/output.
+See tests/STAGE_LINKAGE.txt and help dea's stage-link diagnostics. No new public
+tolerance option was added. The matrix is in-memory and main-analysis-only.
+
+Cooper simplex certification and shared native/simplex input guard are described
+in INSTALL_COOPER.txt. Copy all 74 matched runtime/help files together.

@@ -1,0 +1,51 @@
+Wide failure recovery and exactly reversible initial row scaling
+2026-11-04; simplex2.0.22, LP contract0.4.6
+
+Run from a packaged checkout (licensed Stata16+, Python3.10+, NumPy/SciPy):
+ python3 tests/test_wide_scaling.py --stata /path/to/stata-mp --output /new/test-output
+The output directory must be new. No private research paths, R packages or
+network downloads are used. Source and fixture SHA256 values are recorded.
+
+269 finite checks, grouped into three independent Stata sessions:
+- 56 thin column-selection controls:49 full-rank constructions and7 invalid/zero
+  controls, up to32 rows and10,000 columns, fixed columns, duplicates and ties.
+  Selected original columns are checked for full rank with rational elimination.
+- 68 multiplier controls:67 stored binary64 vectors plus1 missing-value control.
+  Binary input includes subnormal values, extreme exponents, mixed ranges, zeros
+  and empty rows. Fraction checks both forward exact scaling and reversal.
+- 21 wide LPs:3 exact positive-coefficient seeds at127/128/129/256/1024/4090/4091
+  columns. Rational primal and dual witnesses certify the original optimum6.
+  18 must return the exact primal. The3 largest retain numerical-failure status
+  at the separate standard-form quality bound n+2m<=4096.
+- 124 public LP commands:62 inputs under none/row.124 required successes and
+  118 required exact primals. Every returned solution is checked in original
+  units, against the supplied tolerance and a1e-8 relative objective benchmark.
+  The former c337 none/row failures now require exact reconstruction recovery.
+
+The fixture refers to packaged precision_recovery.json indices and contains
+hexadecimal binary64 multiplier controls. Source problems have strictly positive
+original coefficients/RHS/cost; signed or zero helper controls are general
+numerical tests, not negative-valued DEA observations.
+
+Selection is a proposal, not a universal rank or feasibility oracle. At most two
+real-column bases are proposed. Small matrices retain the established padded QR
+path; above128 columns thin Householder work avoids padding up to n-by-n.
+Original-factor solve, nonnegativity, original residual checks and the bounded
+quality screen still decide acceptance. No original LP row is removed by this
+new transition. Exponent and dimension limits remain documented in
+PRECISION_RECOVERY.txt; no unlimited-size or universal-optimality claim is made.
+
+Optional scaling(row)/lpscaling(row) now uses a power-of-two multiplier for each
+row jointly with its RHS and another for the objective. If exact reversal or
+finite-range checks fail, that transformation uses1. Default none is unchanged.
+This initial representation change applies to the shared LP contract, including
+simplex/ipm/auto and MILP nodes. It can change already accepted numerical results.
+It is distinct from failure-only simplex recovery. A documented small near case
+c191 row has a tiny error increase within tolerance, while4 near cases become
+exact. Neither monotone precision improvement nor success for all LPs is promised.
+Native IPM's internal algorithm is unchanged.
+
+Keep the separate precision_recovery suite:396 exact-witness conditions require
+396 available solutions and279 exact recoveries. The known e015 objective
+boundary remains explicitly recorded; general linear dependence and unsupported degenerate supports
+remain outside the bounded duplicate policy. See DUPLICATE_RECOVERY.txt.

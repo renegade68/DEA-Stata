@@ -1,6 +1,10 @@
 {smcl}
+{* Help revision 2026-11-02: validated CRS LPs, complete Nash states, matrix/detail diagnostics.}{...}
+{* Help revision 2026-11-02: singleton sample rules by strategy.}{...}
+{* Help revision 2026-11-01: if/in defines both evaluation and reference samples.}{...}
+{* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* version 2.2.0  03may2026}{...}
+{* version 2.3.0  02nov2026}{...}
 {viewerjumpto "Related article" "dea_crossgame##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_crosseff" "help dea_crosseff"}{...}
@@ -14,11 +18,32 @@
 {marker syntax}{...}
 {title:Syntax}
 
+{pstd}Form A{p_end}
+
+{p 8 17 2}
+{cmd:dea_crossgame} {it:inputvars} {cmd:=} {it:outputvars}
+{ifin} [{cmd:,} {it:options}]
+
+{pstd}Form B{p_end}
+
 {p 8 17 2}
 {cmd:dea_crossgame} {ifin}{cmd:,}
 {cmd:inputs(}{it:varlist}{cmd:)}
 {cmd:outputs(}{it:varlist}{cmd:)}
 [{it:options}]
+
+{pstd}
+{cmd:if} and {cmd:in} restrict both the DMUs evaluated and the reference
+set. Observations with missing input/output values or a missing explicit DMU identifier
+are excluded. Quantities must be numeric and nonnegative, with at least one
+positive input and one positive output per selected observation. Unrelated
+variables do not affect sample selection. Generated results are missing outside
+the selected sample. An empty estimation sample returns {cmd:r(2000)}.
+{cmd:strategy(aggressive)}, {cmd:strategy(benevolent)} and {cmd:strategy(all)}
+(including the default) require at least two selected observations; a single
+remaining DMU returns {cmd:r(2001)} before creating or replacing result columns.
+When {cmd:replacevars} is used, it replaces entire result columns, including
+setting observations outside the selected sample to missing.{p_end}
 
 {synoptset 26 tabbed}{...}
 {synopthdr}
@@ -32,7 +57,8 @@
 {synopt:{opt strategy(string)}}game strategy: {cmd:aggressive}, {cmd:benevolent}, {cmd:nash}, or {cmd:all} (default){p_end}
 {synopt:{opt maxiter(#)}}maximum iterations for Nash convergence; default {cmd:100}{p_end}
 {synopt:{opt generate(string)}}prefix for generated variables; default {cmd:_cg}{p_end}
-{synopt:{opt tolerance(#)}}convergence tolerance; default {cmd:1e-6}{p_end}
+{synopt:{cmd:replacevars}}explicitly replace existing result variables; model data and identifiers remain protected{p_end}
+{synopt:{opt tolerance(#)}}positive finite LP feasibility and Nash stopping tolerance; default {cmd:1e-6}{p_end}
 {synopt:{opt matrix}}display full cross-efficiency matrix{p_end}
 {synopt:{opt detail}}display detailed output{p_end}
 {synopt:{opt debug}}display debug information{p_end}
@@ -53,33 +79,36 @@ anticipated — and responded to — other DMUs' choices.
 {ul:Three competitive strategies:}
 
 {phang2}
-{bf:Aggressive}: Each DMU chooses weights that maximize its own self-appraisal
-score {it:and}, as a secondary goal, minimizes the cross-efficiency scores of
-competitors. This is the fully competitive ("zero-sum") strategy.
+{bf:Aggressive}: After primary input-oriented CRS efficiency is computed,
+minimize sum over j!=i of u_i*y_j, subject to v_i*x_i=1,
+u_i*y_i=self_i, frontier constraints u_i*y_j<=v_i*x_j, and nonnegative
+weights. This is the command's existing weighted-output surrogate.
 
 {phang2}
-{bf:Benevolent}: Each DMU chooses weights that maximize its own score
-{it:and}, as a secondary goal, maximizes others' cross-efficiency scores.
-This is the cooperative ("win-win") strategy.
+{bf:Benevolent}: Maximize the same weighted-output sum on the same optimal
+self-efficiency face. Neither secondary objective optimizes the sum of peer
+ratios u_i*y_j/(v_i*x_j), since other DMUs' denominators are not normalized.
+These strategies are diagnostics; they are not the exact fractional secondary
+models or a zero-sum/cooperative structural game.
 
 {phang2}
-{bf:Nash}: The iterative game cross-efficiency algorithm of
-{help dea_crossgame##LWCZ2008:Liang et al. (2008)} solves best-response
-multiplier programs subject to preserving each peer DMU's current game
-cross-efficiency score. Convergence is monitored up to {opt maxiter()}
-iterations.
+{bf:Nash}: Implements the CRS input model (5) and synchronous iteration of
+{help dea_crossgame##LWCZ2008:Liang et al. (2008)}. For each protected peer d
+and target j, maximize u*y_j subject to v*x_j=1, u*Y<=v*X,
+theta_d*v*x_d-u*y_d<=0, and u,v>=0. Weights can differ for every (d,j).
+Initial theta is the column mean of the ordinary primary cross-efficiency
+matrix, including its diagonal. Each new theta averages all n game LP
+objectives for the target, including d=j.
 
 {phang2}
-{bf:All}: Compute all three strategies and report results together (default).
+{bf:All}: Compute all three strategies (default). A single strategy uses the
+same primary solution and procedure as its corresponding part of {cmd:all}.
 
 {pstd}
-{ul:Comparison:}
-
-{pstd}
-The three strategies typically yield different efficiency rankings.
-Aggressive scores are lower (harder to achieve), benevolent scores are higher,
-and Nash scores lie in between. Comparing them reveals the sensitivity of
-rankings to competitive assumptions.
+There is no implemented guarantee that aggressive scores are below benevolent
+scores or that Nash lies between them. The secondary objectives and averaging
+sets differ. Alternative optimal weights may change peer matrices and ranks.
+Nash's numerical stopping rule does not certify an exact equilibrium.
 
 {marker options}{...}
 {title:Options}
@@ -87,14 +116,42 @@ rankings to competitive assumptions.
 {phang}
 {opt strategy(string)} specifies which game strategy to use.
 {cmd:aggressive}, {cmd:benevolent}, {cmd:nash}, or {cmd:all} (default).
+Aggressive and benevolent scores average evaluations by other DMUs, excluding
+the evaluated DMU itself, so they require at least two observations after
+{cmd:if}/{cmd:in} and missing-value exclusions. The count is based on selected
+observations, not distinct ID labels or distinct input/output vectors.
+The existing {cmd:strategy(nash)} calculation includes self-evaluations and
+remains available for one DMU; interpret that case as self-appraisal.
 
 {phang}
 {opt maxiter(#)} sets the maximum number of iterations for Nash equilibrium
 computation. Default is 100. If convergence is not achieved within {opt maxiter()}
-iterations, the last iterate is returned.
+iterations, the last complete state is returned with {cmd:r(nash_status)=1}.
+The value must be a positive integer, even when only a secondary strategy is
+requested. Invalid values return error 198 before result replacement.
 
 {phang}
-{opt matrix} displays the full n×n cross-efficiency matrix for each strategy.
+{opt matrix} displays and returns the full n×n matrix for each requested
+strategy. Rows and columns follow selected observation order. For aggressive
+and benevolent matrices, row i is an evaluator and column j is a target.
+In the Nash matrix, row d is the protected peer and column j is the target;
+each cell has its own optimal weights. The initial matrix, selected ordinary
+and secondary weights, statuses, peer counts and Nash history are also returned.
+Weights use original data units. Stata matrix-size limits apply.
+
+{phang}
+{opt detail} displays secondary stage statuses and available-peer counts, and
+the Nash trace when requested. {opt debug} additionally prints each completed
+Nash iteration's maximum change.
+
+{phang}
+{opt tolerance(#)} must be positive and finite. LPs are column/evaluated-row
+reparameterized and constraint rows positively rescaled. The native solver uses
+min(tolerance,1e-12) for convergence and the requested tolerance for scaled
+primal/bound checks. The same requested value sets the Nash stopping criterion:
+max absolute change of all scores between two complete states < tolerance.
+This is not a bound on score error or a proof of exact optimality. No solver
+engine option is provided by this command.
 
 {phang}
 {opt generate(string)} sets the prefix for generated variables (default {cmd:_cg}).
@@ -106,14 +163,83 @@ The following variables are created depending on {opt strategy()}:
 {p2col:{it:prefix}{cmd:_nash}}Nash equilibrium cross-efficiency score{p_end}
 
 {marker results}{...}
-{title:Stored results}
+{title:Stored results and failure handling}
 
-{synoptset 20 tabbed}{...}
-{p2col 5 20 24 2: Scalars}{p_end}
-{synopt:{cmd:r(n)}}number of DMUs{p_end}
+{pstd}
+From version 2.3.0 the fixed 1e-6 positive weight floor is removed; all weights
+have lower bound zero. This prevents a unit-dependent change in the model.
+Historical weights and peer scores may change. A finite nonnegative weighted
+output, a finite positive weighted input, and a finite ratio <=1+tolerance
+are required for ordinary and secondary peer cells. Small positive denominators
+are retained. No ratio clipping or epsilon imputation is used. Individual zeros
+and redundant all-zero columns are allowed; 0/0 remains missing.
 
-{p2col 5 20 24 2: Macros}{p_end}
-{synopt:{cmd:r(strategy)}}strategy used{p_end}
+{pstd}
+Aggressive/benevolent means use available off-diagonal cells. If a secondary
+LP is unavailable, the already accepted primary weights are retained with
+status 3. This is a fallback, not a successful secondary optimization. An
+unavailable primary leaves that evaluator's weights missing, although the DMU
+can still receive evaluations from other evaluators. Peer counts disclose
+changing averaging sets.
+
+{pstd}
+Nash requires a complete initial matrix and complete n-by-n iterations.
+An incomplete initial matrix returns missing Nash scores (status 2). If any
+pair LP fails in an iteration, the entire attempted update is discarded and
+the last complete state is returned (status 3). That state can be the initial
+ordinary cross-efficiency vector when zero game iterations succeeded. Neither
+status 1 nor 3 should be interpreted as an equilibrium estimate. Primary and
+secondary results remain available. An unavailable solve is not a certificate
+of mathematical infeasibility.
+
+{synoptset 27 tabbed}{...}
+{syntab:Scalars}
+{synopt:{cmd:r(n)}}selected DMUs{p_end}
+{synopt:{cmd:r(tolerance)}}requested tolerance{p_end}
+{synopt:{cmd:r(maxiter)}}iteration limit{p_end}
+{synopt:{cmd:r(n_failed_primary)}}unavailable primary solves{p_end}
+{synopt:{cmd:r(n_failed_agg)}, {cmd:r(n_failed_ben)}}secondary fallbacks; requested strategies only{p_end}
+{synopt:{cmd:r(n_missing_agg)}, {cmd:r(n_missing_ben)}}missing off-diagonal cells; requested strategies only{p_end}
+{synopt:{cmd:r(nash_status)}}0 converged; 1 iteration limit; 2 initial matrix incomplete; 3 iteration failed{p_end}
+{synopt:{cmd:r(nash_converged)}}1 only for status 0{p_end}
+{synopt:{cmd:r(nash_iterations)}}number of completed game iterations{p_end}
+{synopt:{cmd:r(nash_attempts)}}number of attempted game iterations{p_end}
+{synopt:{cmd:r(nash_failed_pairs)}}unavailable pairs in the failed attempted iteration; otherwise 0{p_end}
+{synopt:{cmd:r(nash_initial_missing)}}missing cells in initial n-by-n matrix{p_end}
+{synopt:{cmd:r(nash_last_change)}}last completed iteration's maximum change; missing if none{p_end}
+{syntab:Macros}
+{synopt:{cmd:r(strategy)}}requested strategy{p_end}
+{syntab:Matrices: require matrix option}
+{synopt:{cmd:r(self_eff)}}n-by-1 ordinary self scores{p_end}
+{synopt:{cmd:r(weights_input)}, {cmd:r(weights_output)}}n-by-m/n-by-s primary weights{p_end}
+{synopt:{cmd:r(ce_initial)}}ordinary primary cross-efficiency matrix{p_end}
+{synopt:{cmd:r(ce_agg)}, {cmd:r(ce_ben)}}requested secondary peer matrices{p_end}
+{synopt:{cmd:r(weights_agg_input)}, {cmd:r(weights_agg_output)}}selected aggressive weights{p_end}
+{synopt:{cmd:r(weights_ben_input)}, {cmd:r(weights_ben_output)}}selected benevolent weights{p_end}
+{synopt:{cmd:r(status_agg)}, {cmd:r(status_ben)}}n-by-1: 0 primary unavailable; 2 secondary accepted; 3 primary fallback{p_end}
+{synopt:{cmd:r(count_agg)}, {cmd:r(count_ben)}}n-by-1 available off-diagonal counts{p_end}
+{synopt:{cmd:r(ce_nash)}}last complete state matrix; all missing for status 2{p_end}
+{synopt:{cmd:r(nash_history)}}score vectors by row, initial state then completed iterations; n columns{p_end}
+{synopt:{cmd:r(nash_trace)}}initial state then all attempts: iteration, max_change, missing_pairs, complete{p_end}
+{p2colreset}{...}
+
+{pstd}
+Nash scalars/matrices exist only when requested. Secondary-specific results
+exist only for their requested strategy. At trace iteration 0, missing_pairs
+counts initial missing ratios and complete indicates whether initialization
+succeeded. The trace retains a failed attempt, while the score history does not.
+
+{pstd}
+{bf:Protecting existing data.} All output names are checked before results are
+created. An existing result variable causes an error unless {cmd:replacevars}
+is specified. The option applies only to variables produced by the current
+command; it does not remove other variables sharing the prefix. Replacement
+recreates whole result columns, including their storage types and labels;
+observations not scored by the command do not retain old scores. Variables
+used as model data or identifiers cannot be replaced, even with
+{cmd:replacevars}. Invalid or duplicate output names are rejected before any
+existing result column is changed. This name check does not promise rollback
+of later computation or file-write errors.
 
 {marker examples}{...}
 {title:Examples}
@@ -143,15 +269,36 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 {phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu)}{p_end}
 
 {pstd}Nash equilibrium only{p_end}
-{phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu) strategy(nash) maxiter(200)}{p_end}
+{phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu) strategy(nash) maxiter(200) replacevars}{p_end}
 
 {pstd}Compare aggressive vs. benevolent{p_end}
-{phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu) strategy(all)}{p_end}
+{phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu) strategy(all) replacevars}{p_end}
 {phang2}{cmd:. list dmu _cg_agg _cg_ben _cg_nash}{p_end}
+{phang2}{cmd:. return list}{p_end}
 
 {pstd}Display cross-efficiency matrix for aggressive strategy{p_end}
-{phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu) strategy(aggressive) matrix}{p_end}
+{phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu) strategy(aggressive) matrix detail replacevars}{p_end}
 
+
+{pstd}Inspect a bounded Nash run and its stopping status{p_end}
+{phang2}{cmd:. dea_crossgame capital labor = output, dmu(dmu) strategy(nash) gen(short) maxiter(1) matrix detail}{p_end}
+{phang2}{cmd:. assert inlist(r(nash_status),0,1,2,3)}{p_end}
+{phang2}{cmd:. matrix list r(nash_trace)}{p_end}
+
+{pstd}Restrict both evaluation and reference DMUs{p_end}
+{phang2}{cmd:. dea_crossgame capital labor = output if inlist(dmu,"Firm B","Firm C","Firm D","Firm E"), dmu(dmu) gen(sub)}{p_end}
+{phang2}{cmd:. assert r(n)==4}{p_end}
+{phang2}{cmd:. assert missing(sub_agg) if dmu=="Firm A" | dmu=="Firm F"}{p_end}
+
+{pstd}Single-DMU behavior by strategy:{p_end}
+{phang2}{cmd:. capture noisily dea_crossgame capital labor = output if dmu=="Firm A", strategy(all) gen(one)}{p_end}
+{phang2}{cmd:. assert _rc==2001}{p_end}
+{phang2}{cmd:. capture confirm variable one_agg, exact}{p_end}
+{phang2}{cmd:. assert _rc==111}{p_end}
+{phang2}{cmd:. dea_crossgame capital labor = output if dmu=="Firm A", strategy(nash) gen(one)}{p_end}
+{phang2}{cmd:. assert r(n)==1}{p_end}
+{phang2}{cmd:. assert abs(one_nash-1)<1e-6 if dmu=="Firm A"}{p_end}
+{phang2}{cmd:. assert missing(one_nash) if dmu!="Firm A"}{p_end}
 
 {phang2}{cmd:. restore}{p_end}
 {* DEAS_HELP_EXAMPLES_END}{...}

@@ -1,0 +1,54 @@
+Successful-basis quality checks (simplex 2.0.23, LP contract 0.4.7)
+
+The common simplex solver checks the actual final basis after a successful
+solve. An already-certified result is kept bit for bit. When quality checks
+identify a defect, the original basis may be refined; replacement requires
+both original primal checks and conservative primal-dual quality checks.
+If a certificate is unavailable or refinement cannot be certified, the default
+retain policy keeps the original success. Unavailability is not an infeasible
+certificate. This is not a guarantee that every returned success is certified.
+There is no new public option. Strict rejection remains a private test control.
+
+The public LP adapter checks original user coefficients and bounds, including
+lower-bound shifts and their objective constant. Exact all-zero rows with zero
+RHS can be excluded from basis construction; all original rows are checked.
+The fast sufficient screen uses conservative bounds and only inputs within
+2^-100..2^100 (apart from zero); an unproved fast check falls back to the
+existing compensated arithmetic. The n+2m<=4096 and other work/range limits
+remain. Bounded exact row selection and trivial empty-basis checks were added in
+simplex2.0.24; unsupported dimension/work/range cases can still be retained.
+See ROW_RECOVERY.txt. The strict sum-row control now certifies success.
+
+Run the self-contained regression from this package:
+  python tests/test_success_quality.py --stata /path/to/stata-mp \
+    --output /new/output/directory
+Requires NumPy/SciPy and licensed Stata16+. Every output directory must be new.
+The test uses only packaged fixtures; no research checkout or network is needed.
+It covers139 accepted-result conditions plus1 cancellation boundary,1297 exact
+arithmetic checks,96 public-unit commands,32 actual-basis perturbation controls,
+24 bounded LP and9 MILP commands,48 solver controls and3 direct guards.
+The139 include137 exactly corrected results and2 certified vectors preserved.
+Python Fraction checks use actual stored doubles, not rounded display values.
+The deliberately perturbed and strict/off cases are private test controls.
+Counts overlap transformed LPs and do not represent independent datasets.
+
+The updated duplicate regression covers1215 conditions:388 earlier failure
+recoveries,43 successful-basis corrections and784 unchanged earlier successes.
+All1215 are now exact for these witnesses;1172 already-exact outputs remain
+unchanged. Iterations and recovery-log accounting are preserved. The43
+corrected cases report "Optimal after original-basis success refinement";
+messages for unchanged results are preserved.
+Run test_duplicate_recovery.py separately with the same two CLI arguments.
+Older notes describe historical failure-only behavior. Their earlier-result
+priority applies before this additional successful-basis check.
+
+Local research timing used three rotated64-command DEA batches per policy.
+Median total elapsed time fell from15.746s for always-precise checking to2.441s
+with the fast screen (off:2.029s), with identical returned files. These are local
+measurements including startup/compilation/I/O, not a universal speed guarantee.
+Native IPM and deferred environmental bootstrap methodology are unchanged.
+Use the complete matched runtime/help package and a fresh session or clear all.
+
+The same regression also deletes four cached adapter functions individually.
+Each direct internal call must stop with r(498), and the next public lp call
+must reload the matching adapter and return the correct optimum.

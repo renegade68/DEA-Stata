@@ -1,0 +1,59 @@
+Exact duplicate recovery after numerical failure (04 Nov 2026)
+
+Run the complete package with NumPy/SciPy and licensed Stata16+:
+ python3 tests/test_duplicate_recovery.py --stata /path/to/stata-mp --output /new/output
+
+Scope
+Every existing eta/factorized/precision/certified/reconstruction result retains
+priority. Only a remaining numerical failure enables one exact duplicate map
+and one reduced core run, with recursive duplicate recovery disabled.
+Rows include the RHS; columns include cost and every original constraint.
+Only exact positive binary-power multiples with exponents [-400,400] qualify.
+Repeated multiplication by2 or.5 avoids approximate Mata exponentiation.
+The exact-product checks may reject coefficients outside their finite range.
+Zero rows/columns are not globally pruned. This is not general rank reduction.
+The original standard-form n+2m<=4096 limit and a1,000,000-element comparison
+budget apply. Failure or budget exhaustion retains numerical failure.
+
+Original-unit validation
+The reduced positive support must be a nonsingular basis of the reduced rows.
+The existing two-component refinement constructs primal and dual candidates.
+Removed original variable coordinates and dual rows are restored with zero;
+all original constraints and the existing bounded primal/dual quality checks
+must pass. Runtime duals are numerical certificates at existing tolerances,
+not exact rational dual witnesses. Arbitrary degenerate supports can be rejected.
+MILP applies the transformation only to continuous node relaxations, then uses
+original coordinates for bounds, integrality and branching.
+
+Permanent tests
+The1215 stored-double conditions are5 seeds varied by duplicates, row/column
+order, exact scale and tolerance. Strictly positive nonempty inputs and exact
+rational primal/known-dual witnesses are checked independently.388 prior
+failures require exact original feasibility and objective6;827 prior accepted
+outputs preserve their expected x, objective, iterations, messages and audit record, including preexisting
+accuracy observations. The test does not redefine those accepted observations
+as exact solutions. The114 reconstruction conditions overlap this corpus.
+Logging OFF/ON and private observation must preserve results. The sum of actual
+once-function iterations equals the published count, and the reduced run has
+depth at most1 and one public audit record. Near-duplicates differing by1ULP
+in a row coefficient/RHS/cost/inequality coefficient must not be merged.
+Exact/approximate power, zero/signed/nonfinite inputs, finite range, size and
+comparison budget, unsupported support, infeasible/unbounded helper results,
+bad restored primal/dual, missing quality and exhausted reduced iterations
+are tested as explicit controls. Fault copies stay inside the output directory.
+
+Limits
+No universal feasibility/optimality or performance guarantee is implied.
+Generic linear dependence, non-power-of-two ratios and more general degeneracy
+remain outside this bounded transform. Existing accepted objective observations
+(including e015 and42 corpus observations) and6 near wide-public results are
+not corrected. Native IPM and deferred SW2007 work remain separate.
+
+Automatic-engine scope
+This priority applies within the common simplex solver. With engine(auto) or
+lpengine(auto), a newly recovered simplex result can replace a previously
+successful native fallback; scores, reference weights, iteration totals and the
+reported backend can therefore change across versions.
+The explicit native IPM implementation is unchanged. The827 stored preservation
+controls are earlier accepted common-simplex results. See the integration report
+for separate auto/IPM comparisons.

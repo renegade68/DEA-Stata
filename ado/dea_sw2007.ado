@@ -1,4 +1,7 @@
-*! version 1.1.0  01may2026
+*! version 1.2.2  02nov2026
+*! Sequential regression bootstrap retries the same pseudo-data after a short-fit failure.
+*! Save selected observation results for both procedures and both backends.
+*! 2026-11-01: preflight output names; explicit replacevars; protect model data.
 *! dea_sw2007.ado — Simar & Wilson (2007) Algorithm 2
 *!                  Full Two-Stage DEA with Bootstrap Inference
 *! Requires: Stata 16+, _dea_simplex.ado (ships with dea.ado)
@@ -12,35 +15,10 @@
 *!                            sectional only, rts(crs|vrs|nirs) only.
 *!                            Use for numerical-equivalence verification.
 *!
-*! ALGORITHM (Simar & Wilson 2007, Journal of Econometrics 136: 31-64):
-*!
-*!  Step 1  Compute original DEA efficiency scores θ_i* for i=1..n
-*!          (year-by-year for panel data)
-*!
-*!  Step 2  Transform: ỹ_i = 1/θ_i* (left-truncated at τ=1)
-*!          Regress ỹ_i on Z_i (environmental variables) using
-*!          truncated normal MLE → β̂, σ̂
-*!
-*!  Step 3  Bootstrap loop b = 1..B:
-*!   3a.  For each observation i:
-*!        Draw ε_i ~ N(0, σ̂²) left-truncated at (τ - Z_i'β̂)
-*!        Compute pseudo-inverse-efficiency: ỹ_i^b = Z_i'β̂ + ε_i
-*!        Pseudo-efficiency: θ_i^b = 1/ỹ_i^b
-*!   3b.  For each year t (panel) or all obs (cross-section):
-*!        Generate pseudo-data:
-*!          Output-oriented: Y_i^b = Y_i * (θ_i^b/θ_i*)
-*!          Input-oriented:  X_i^b = X_i * (θ_i*/θ_i^b)
-*!        Re-solve DEA against pseudo-frontier → θ_i^{**b}
-*!   3c.  Transform θ_i^{**b} → ỹ_i^{**b} = 1/θ_i^{**b}
-*!        Re-run truncated MLE: ỹ^{**b} ~ Z → β̂^b, σ̂^b
-*!
-*!  Step 4  Bias-corrected estimate:
-*!          β̂^bc = 2β̂ - mean_b(β̂^b)
-*!          Pivot CI: [β̂ - q_{1-α/2}, β̂ - q_{α/2}]
-*!          where q = quantiles of (β̂^b - β̂)
-*!
-*! Panel support: DEA re-solved separately per time period (Step 3b).
-*! Pre-computed DEA scores accepted via scores() option (Step 1 skipped).
+*! Default procedure(sequential): two separate bootstrap loops, inverse-score
+*! bias correction, regression refit, then parametric regression bootstrap.
+*! procedure(joint) retains the historical shared-loop estimator and initial e(b).
+*! This legacy estimator is NOT Simar-Wilson Algorithm 2.
 *!
 *! AUTHORS:
 *! --------
@@ -99,31 +77,10 @@ program define dea_sw2007, eclass
     //                          simarwilson; cross-sectional + rts(crs|vrs|nirs)
     //                          only.  Used primarily for verification.
 
-    // Detect Form A
-    local raw0 `"`0'"'
-    if strpos(`"`raw0'"', "=") > 0 {
-        local _io_inputs ""
-        gettoken _w 0 : 0, parse("=,")
-        while "`_w'" != "=" & "`_w'" != "" {
-            if "`_w'" == "," {
-                di as error "Syntax error: comma before '='"
-                error 198
-            }
-            local _io_inputs `_io_inputs' `_w'
-            gettoken _w 0 : 0, parse("=,")
-        }
-        local _cpos = strpos(`"`0'"', ",")
-        if `_cpos' > 0 {
-            local _pre  = substr(`"`0'"', 1, `_cpos')
-            local _post = substr(`"`0'"', `_cpos'+1, .)
-            local 0 `"`_pre' inputs(`_io_inputs') `_post'"'
-        }
-        else {
-            local 0 `"`0', inputs(`_io_inputs')"'
-        }
-    }
+    _dea_parse_io `0'
+    local 0 `"`r(args)'"'
 
-    syntax [varlist(numeric)] [if] [in] ,  ///
+    syntax [varlist(numeric default=none)] [if] [in] ,  ///
         ENVars(varlist numeric)              ///
         [                                   ///
         INputs(varlist numeric)             ///
@@ -135,18 +92,27 @@ program define dea_sw2007, eclass
         ORIentation(string) ORT(string)     ///
         REPS(integer 2000)                  ///
         BCREPS(integer 1000)                ///
-        Level(integer 95)                   ///
+        Level(real 95)                   ///
         SEED(integer 0)                     ///
         TAU(real 1.0)                       ///
         GENerate(name)                      ///
+        REPLACEVARS                         ///
         DMU(varname)                        ///
         SAVing(string)                      ///
         REPLACE                             ///
         NOBCorrected                        ///
         TOLerance(real 1e-7)                ///
         TRACE                               ///
+        PROCedure(string)                   ///
         BACKend(string)                     ///
         ]
+
+    if "`procedure'" == "" local procedure "sequential"
+    local procedure = lower("`procedure'")
+    if !inlist("`procedure'", "sequential", "joint") {
+        di as error "procedure() must be sequential (Algorithm 2) or joint (legacy)"
+        exit 198
+    }
 
     // Resolve varlist → outputs (Form B)
     if "`outputs'" == "" {
@@ -179,20 +145,25 @@ program define dea_sw2007, eclass
         di as error "orientation() must be input or output"
         exit 198
     }
-    if `reps' <= 0 {
-        di as error "reps() must be a positive integer"
+    if missing(`reps') | `reps' < 2 {
+        di as error "reps() must be an integer of at least 2"
         exit 198
     }
-    if `bcreps' <= 0 {
-        di as error "bcreps() must be a positive integer"
+    if missing(`bcreps') | `bcreps' < 2 {
+        di as error "bcreps() must be an integer of at least 2"
         exit 198
     }
-    if `level' <= 0 | `level' >= 100 {
+    if missing(`level') | `level' <= 0 | `level' >= 100 {
         di as error "level() must be between 0 and 100"
         exit 198
     }
-    if `tau' <= 0 {
+    if missing(`tau') | `tau' <= 0 {
         di as error "tau() must be positive"
+        exit 198
+    }
+
+    if missing(`tolerance') | `tolerance' <= 0 {
+        di as error "tolerance() must be positive and finite"
         exit 198
     }
 
@@ -203,8 +174,9 @@ program define dea_sw2007, eclass
         di as error "backend() must be {it:internal} or {it:simarwilson}"
         exit 198
     }
-    if "`backend'" == "internal" & "`rts'" == "nirs" {
-        di as error "backend(internal) supports rts(crs|vrs|drs|irs), not rts(nirs)"
+    if "`backend'" == "internal" & "`rts'" == "nirs" local rts "drs"
+    if "`backend'" == "simarwilson" & ("`procedure'" == "joint" | `tau' != 1) {
+        di as error "backend(simarwilson) requires procedure(sequential) and tau(1)"
         exit 198
     }
 
@@ -233,23 +205,43 @@ program define dea_sw2007, eclass
 
     // Generate prefix
     if "`generate'" == "" local generate "sw07"
-    if "`replace'" != "" {
-        capture drop `generate'_eff
-        capture drop `generate'_eff_bc
+    if "`replace'" != "" local replacevars "replacevars"
+    // The external backend does not create these internal output variables.
+    if "`backend'" == "internal" {
+        local _planned `generate'_eff
+        if "`nobcorrected'" == "" local _planned `_planned' `generate'_eff_bc
+        _dea_output_check, names(`_planned') ///
+            protect(`inputs' `outputs' `scores' `envars' `dmu' `panel' `time') `replacevars'
     }
-    else {
-        capture confirm new variable `generate'_eff
-        if _rc {
-            di as error "variable `generate'_eff already exists; specify replace or another generate() prefix"
-            exit 110
+
+    // Plan the file independently of the variables retained in memory.
+    local _savevars `dmu' `panel' `time' `inputs' `outputs' `scores' `envars'
+    local _savevars : list uniq _savevars
+    if `"`saving'"' != "" {
+        if strtrim(`"`saving'"') == "" {
+            di as error "saving() requires a filename"
+            exit 198
         }
-        if "`nobcorrected'" == "" {
-            capture confirm new variable `generate'_eff_bc
-            if _rc {
-                di as error "variable `generate'_eff_bc already exists; specify replace or another generate() prefix"
-                exit 110
-            }
+        // Match save's default .dta extension, including dotted directories.
+        local _save_leaf = subinstr(`"`saving'"', char(92), "/", .)
+        local _save_leaf = regexr(`"`_save_leaf'"', "^.*/", "")
+        if strpos(`"`_save_leaf'"', ".") == 0 local saving `"`saving'.dta"'
+        capture confirm new file `"`saving'"'
+        local _filerc = _rc
+        if `_filerc' & !(`_filerc' == 602 & "`replace'" != "") {
+            di as error "Cannot save results to " _asis `"`saving'"'
+            exit `_filerc'
         }
+        if "`backend'" == "simarwilson" {
+            local _planned `generate'_delta
+            if "`scores'" == "" & "`nobcorrected'" == "" local _planned `_planned' `generate'_delta_bc
+            // These columns exist only in the file. Unrelated caller columns
+            // with the same names are neither overwritten nor exported.
+            _dea_output_check, names(`_planned') protect(`_savevars') replacevars
+        }
+        // On an estimation or final write error, restore the caller's data.
+        // Successful branches explicitly release this preservation below.
+        preserve
     }
 
     // Seed
@@ -275,6 +267,37 @@ program define dea_sw2007, eclass
 
     qui count if `touse'
     local n_obs = r(N)
+
+    if `n_obs' == 0 error 2000
+    if "`backend'" == "internal" {
+        if `n_obs' < 3 error 2001
+        if "`panel'" != "" {
+            qui levelsof `time' if `touse', local(_periods)
+            foreach _t of local _periods {
+                qui count if `touse' & `time' == `_t'
+                if r(N) < 3 {
+                    di as error "Each selected period requires at least 3 DMUs; period `_t' has " r(N)
+                    exit 2001
+                }
+            }
+        }
+    }
+    if "`procedure'" == "sequential" & "`inputs'`outputs'" != "" {
+        foreach _v of varlist `inputs' `outputs' {
+            qui count if `touse' & `_v' <= 0
+            if r(N) {
+                di as error "Sequential bootstrap requires strictly positive inputs and outputs: `_v'"
+                exit 459
+            }
+        }
+    }
+    if "`scores'" != "" {
+        qui count if `touse' & (`scores' <= 0 | `scores' > 1 + `tolerance')
+        if r(N) {
+            di as error "scores() must contain efficiency scores in (0,1]"
+            exit 459
+        }
+    }
 
     // Ensure simplex engine is loaded
     capture findfile _dea_simplex.ado
@@ -335,6 +358,8 @@ program define dea_sw2007, eclass
             exit 199
         }
 
+        local sw_invert ""
+        if "`orientation'" == "input" local sw_invert "invert"
         local sw_base = cond("`orientation'"=="output", "output", "input")
         if `seed' != 0 set seed `seed'
 
@@ -344,18 +369,66 @@ program define dea_sw2007, eclass
 
         if "`scores'" != "" {
             di as text "Note: pre-computed scores → simarwilson algorithm(1)"
-            simarwilson `scores' `envars' if `touse',                       ///
-                algorithm(1) reps(`reps') level(`level') noprint
+            tempvar _sw_delta
+            qui gen double `_sw_delta' = 1/`scores' if `touse'
+            simarwilson `_sw_delta' `envars' if `touse',                    ///
+                algorithm(1) nounit reps(`reps') level(`level') noprint
         }
         else {
-            simarwilson (`outputs' = `inputs') `envars' if `touse',         ///
-                algorithm(2) rts(`rts') base(`sw_base')                     ///
-                reps(`reps') bcreps(`bcreps') level(`level') noprint
+            local _sw_saveopts ""
+            local _sw_quiet ""
+            if `"`saving'"' != "" {
+                tempvar _sw_raw _sw_bc
+                local _sw_saveopts "tename(`_sw_raw') tebc(`_sw_bc')"
+                local _sw_quiet "quietly"
+            }
+            `_sw_quiet' simarwilson (`outputs' = `inputs') `envars' if `touse',         ///
+                algorithm(2) rts(`rts') base(`sw_base') `sw_invert'                     ///
+                reps(`reps') bcreps(`bcreps') level(`level') noprint `_sw_saveopts'
+            if `"`saving'"' != "" {
+                // tename()/tebc() request data only. Restore the native default
+                // equation names and metadata; never leave temporary names in e().
+                tempname _sw_b _sw_V _sw_matrix
+                matrix `_sw_b' = e(b)
+                matrix `_sw_V' = e(V)
+                mata: _sw07_save_stripes("`_sw_b'", "`_sw_bc'")
+                mata: _sw07_save_stripes("`_sw_V'", "`_sw_bc'")
+                ereturn repost b=`_sw_b' V=`_sw_V', rename
+                local _sw_matrices : e(matrices)
+                foreach _m of local _sw_matrices {
+                    if inlist("`_m'", "b", "V") continue
+                    matrix `_sw_matrix' = e(`_m')
+                    mata: _sw07_save_stripes("`_sw_matrix'", "`_sw_bc'")
+                    ereturn matrix `_m' = `_sw_matrix'
+                }
+                local _sw_cmdline = subinstr(`"`e(cmdline)'"', " `_sw_saveopts'", "", 1)
+                ereturn local cmdline `"`_sw_cmdline'"'
+                ereturn local tename ""
+                ereturn local tebc ""
+                ereturn local depvarname ""
+                simarwilson
+            }
         }
 
         // Mark backend in e() for downstream verification scripts
         ereturn local sw07_backend "simarwilson"
         ereturn local sw07_wrapper "dea_sw2007"
+        ereturn local procedure "sequential"
+
+        if `"`saving'"' != "" {
+            local _from `_sw_raw'
+            if "`scores'" != "" local _from `_sw_delta'
+            if "`scores'" == "" & "`nobcorrected'" == "" local _from `_from' `_sw_bc'
+            capture noisily _dea_sw2007_save, saving(`"`saving'"') touse(`touse') ///
+                vars(`_savevars') from(`_from') to(`_planned') `replace' ///
+                backend(simarwilson) procedure(sequential) scale(inverse_efficiency)
+            local _saverc = _rc
+            if `_saverc' {
+                ereturn clear
+                exit `_saverc'
+            }
+            restore, not
+        }
 
         exit 0
     }
@@ -398,16 +471,21 @@ program define dea_sw2007, eclass
         }
     }
 
-    // Clip scores to valid range and check
-    qui replace `eff_orig' = min(`eff_orig', 1) if `touse'
-    qui replace `eff_orig' = max(`eff_orig', 1e-6) if `touse' & `eff_orig' < 1e-6
-    qui count if `eff_orig' == . & `touse'
-    if r(N) > 0 {
-        di as text "  Warning: " r(N) " missing DEA scores; these will be excluded"
-        qui replace `touse' = 0 if `eff_orig' == .
+    // Never turn missing/failed LP scores into efficient observations.
+    qui count if `touse' & (missing(`eff_orig') | `eff_orig' <= 0 | `eff_orig' > 1 + `tolerance')
+    if r(N) {
+        di as error "DEA failed or returned invalid scores; no bootstrap results were created"
+        ereturn clear
+        exit 498
     }
-    qui count if `touse'
-    local n_obs = r(N)
+    if "`procedure'" == "sequential" {
+        qui replace `eff_orig' = 1 if `touse' & abs(`eff_orig'-1) <= `tolerance'
+    }
+    else {
+        // Preserve the historical joint estimator's numerical floor.
+        qui replace `eff_orig' = min(`eff_orig', 1) if `touse'
+        qui replace `eff_orig' = max(`eff_orig', 1e-6) if `touse' & `eff_orig' < 1e-6
+    }
 
     qui sum `eff_orig' if `touse'
     di as text "  Mean efficiency: " as result %8.4f r(mean)
@@ -433,7 +511,11 @@ program define dea_sw2007, eclass
     di as text "  Inefficient obs used: " as result `n_trunc' " of " `n_obs'
 
     // Run initial truncated regression
-    qui truncreg `eff_inv' `envars' if `touse_trunc', ll(`tau')
+    qui truncreg `eff_inv' `envars' if `touse_trunc', ll(`tau') iterate(200)
+    if !e(converged) {
+        ereturn clear
+        exit 430
+    }
     tempname beta0 V0
     matrix `beta0' = e(b)
     matrix `V0'    = e(V)
@@ -448,6 +530,35 @@ program define dea_sw2007, eclass
     di as text "  Initial β̂:"
     matrix list `beta0', noheader format(%9.4f)
     di as text "  Initial σ̂: " as result %9.4f `sigma0'
+
+    if "`procedure'" == "sequential" {
+        local _timeopt ""
+        if "`time'" != "" local _timeopt "time(`time')"
+        capture noisily _dea_sw2007_seq, inputs(`inputs') outputs(`outputs') ///
+            envars(`envars') touse(`touse') scores(`eff_orig') ///
+            initial(`beta0') vinitial(`V0') sigma(`sigma0') ///
+            reps(`reps') bcreps(`bcreps') level(`level') tau(`tau') ///
+            orientation(`orientation') rts(`rts') tolerance(`tolerance') ///
+            generate(`generate') `nobcorrected' `_timeopt' `trace'
+        local _seqrc = _rc
+        if `_seqrc' {
+            ereturn clear
+            exit `_seqrc'
+        }
+        if `"`saving'"' != "" {
+            capture noisily _dea_sw2007_save, saving(`"`saving'"') touse(`touse') ///
+                vars(`_savevars' `_planned') `replace' ///
+                backend(internal) procedure(sequential) scale(efficiency)
+            local _saverc = _rc
+            if `_saverc' {
+                ereturn clear
+                exit `_saverc'
+            }
+            restore, not
+        }
+        exit
+    }
+    di as text "Legacy procedure(joint): shared DEA/regression loop; e(b) is the initial fit."
 
     // -------------------------------------------------------------------------
     // Step 3: Bootstrap loop
@@ -620,15 +731,23 @@ program define dea_sw2007, eclass
         "  [SD: " %7.4f `sigmab_sd' ", successful reps: " %9.0f `boot_success' "]"
     di as text "{hline 72}"
     di as text "Note: Positive β̂ indicates lower efficiency (larger 1/θ)."
-    di as text "      Negate β̂ to interpret as effect on θ directly."
+    di as text "      Marginal effects on θ require the nonlinear inverse transformation."
     di as text "{hline 72}"
 
     // -------------------------------------------------------------------------
     // Store bias-corrected efficiency scores
     // -------------------------------------------------------------------------
+    foreach _drop_output in `generate'_eff {
+        capture confirm variable `_drop_output', exact
+        if !_rc quietly drop `_drop_output'
+    }
     qui gen double `generate'_eff = `eff_orig' if `touse'
     label var `generate'_eff "DEA efficiency (original)"
     if "`nobcorrected'" == "" {
+        foreach _drop_output in `generate'_eff_bc {
+            capture confirm variable `_drop_output', exact
+            if !_rc quietly drop `_drop_output'
+        }
         qui gen double `generate'_eff_bc = ///
             2*`eff_orig' - (`eff_boot_sum' / `eff_boot_cnt') ///
             if `touse' & `eff_boot_cnt' > 0
@@ -673,6 +792,7 @@ program define dea_sw2007, eclass
     ereturn local  rts       "`rts'"
     ereturn local  orientation "`orientation'"
     ereturn local  backend   "internal"
+    ereturn local  procedure "joint"
     ereturn local  cmd       "dea_sw2007"
     capture matrix drop SW07_beta_bc SW07_b_bc SW07_ci_lo SW07_ci_hi SW07_b_boot SW07_sigma_boot
     capture scalar drop SW07_sigmab_mean SW07_sigmab_sd SW07_boot_success
@@ -687,6 +807,66 @@ program define dea_sw2007, eclass
     }
     di as text "  Use e(b_bc), e(ci_lo), e(ci_hi) for bias-corrected β and CIs"
 
+    if `"`saving'"' != "" {
+        capture noisily _dea_sw2007_save, saving(`"`saving'"') touse(`touse') ///
+            vars(`_savevars' `_planned') `replace' ///
+            backend(internal) procedure(joint) scale(efficiency)
+        local _saverc = _rc
+        if `_saverc' {
+            ereturn clear
+            exit `_saverc'
+        }
+        restore, not
+    }
+
+end
+
+capture program drop _dea_sw2007_save
+program define _dea_sw2007_save
+    version 16.0
+    syntax, SAVing(string) TOUSE(varname) VARS(varlist) ///
+        BACKend(string) PROCedure(string) SCALE(string) ///
+        [FROM(varlist) TO(string) REPLACE]
+    preserve
+    quietly keep if `touse'
+    local keepvars `vars' `from'
+    local keepvars : list uniq keepvars
+    quietly keep `keepvars'
+    if "`from'" != "" rename (`from') (`to')
+    local ordervars `vars' `to'
+    local ordervars : list uniq ordervars
+    order `ordervars'
+    if "`backend'" == "simarwilson" {
+        local raw : word 1 of `to'
+        label variable `raw' "Inverse DEA efficiency supplied to simarwilson"
+        if `: word count `to'' == 2 {
+            local corrected : word 2 of `to'
+            label variable `corrected' "Bias-corrected inverse DEA efficiency from simarwilson"
+        }
+    }
+    char _dta[dea_sw2007_backend] "`backend'"
+    char _dta[dea_sw2007_procedure] "`procedure'"
+    char _dta[dea_sw2007_score_scale] "`scale'"
+    char _dta[dea_sw2007_sample] "Selected observations after missing-value exclusion; may differ from e(sample)"
+    quietly save `"`saving'"', `replace'
+    restore
+    di as text "Results saved to: " _asis `"`saving'"'
+end
+
+mata:
+// Export requests must not rename the public regression equations. Numeric
+// matrices are untouched, including all bootstrap estimates and covariance.
+void _sw07_save_stripes(string scalar name, string scalar temporary)
+{
+    string matrix stripe
+    real scalar i
+    stripe=st_matrixcolstripe(name)
+    for (i=1;i<=rows(stripe);i++) if (stripe[i,1]==temporary) stripe[i,1]="bcscore"
+    st_matrixcolstripe(name,stripe)
+    stripe=st_matrixrowstripe(name)
+    for (i=1;i<=rows(stripe);i++) if (stripe[i,1]==temporary) stripe[i,1]="bcscore"
+    st_matrixrowstripe(name,stripe)
+}
 end
 
 

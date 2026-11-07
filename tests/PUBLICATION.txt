@@ -1,0 +1,65 @@
+PUBLIC TESTS AND PRIVACY
+
+The public inventory is tests/public_files.json. It contains runtime sources,
+help, documentation, test code and fixed regression fixtures. Generated logs,
+datasets, instrumented code copies, archives, local configuration and research
+evidence are not public package files. The repository .gitignore uses explicit
+exceptions for reviewed files; it is not itself a privacy audit.
+
+Before publishing, from the package root:
+  python3 -B tests/check_publication.py
+  python3 -B tests/test_portability.py
+
+The scanner checks the explicit inventory, filenames and UTF-8 contents for
+home-directory paths, user-specific temporary paths, private keys, selected
+token formats, URLs with credentials, contact addresses and the local username.
+Additional private words can be supplied with repeated --private-term options.
+Keep those options local. Reports give relative file/line locations and finding
+types; they never include the matched value. This pattern scan is not a proof
+that every possible identifying detail is absent. Review new datasets and text.
+
+The existing public author contact is explicitly recognized only in ado/help
+attribution. Author names, copyright notices and licenses are preserved. No
+contact address is allowed in tests by that exception. If the public contact
+policy changes, review attribution separately rather than deleting it globally.
+
+After staging the reviewed package files, run:
+  python3 -B tests/check_publication.py --staged --check-identity
+
+This reads every Git index blob, not the working copy, and requires the index
+inventory to match public_files.json exactly. It also checks author AND committer
+email metadata for the GitHub users.noreply.github.com domain. Use the exact
+noreply address displayed in your own GitHub email settings. Configure it locally
+or explicitly for that commit; these tools do not change Git identity, commit,
+push, or rewrite history. Existing published commits are a separate review.
+If command-specific Git configuration or identity environment variables are used,
+run the audit with the same configuration and environment as the actual commit.
+
+EXECUTION AND SHARING
+
+Use tests/run.py to discover Stata and run selected suites sequentially. DEA_STATA
+and DEA_RSCRIPT are local environment settings, not source edits. The runner uses
+a new temporary output directory by default and rejects output inside the package.
+Stata is licensed software supplied by the user; no license file is distributed.
+
+Current-package file discovery uses public_files.json and does not invoke Git.
+Past-version comparisons retain their original numerical assertions and require
+an explicitly reviewed baseline or the documented Git history. The common runner
+lists and checks these requirements before starting. It does not replace missing
+historical evidence with the current version or count missing work as passed.
+
+Only the common runner's shareable-summary.json omits local paths and raw log
+contents by construction. Per-suite logs, manifests, generated do-files and console
+files can contain absolute paths and other local details. Keep them private; do
+not attach the entire output directory to an issue. Temporary results may be
+removed by the OS, so choose a new external --output directory when retaining them.
+
+REVIEWING INVENTORY CHANGES
+
+Keep public_files.json and the explicit .gitignore exceptions synchronized when
+adding/removing package files. The inventory uses relative POSIX paths and rejects
+symlinks, missing files and paths outside the package. Do not add Stata licenses,
+real confidential datasets, local research reports, caches or generated evidence.
+The checked runtime list is the ado/ subset; local scratch files are not copied
+into test packages. Update fixtures only with separately reviewed numerical
+evidence, never merely to make a failing test pass.

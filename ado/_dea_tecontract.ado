@@ -1,8 +1,8 @@
-*! version 0.5.0  20jul2026
+*! version 0.7.0  01nov2026
 *! Loader for the internal radial DEA canonical translator
 version 16.0
 
-capture mata: mata which _dea_lpcontract_dispatch()
+capture mata: assert(findexternal("_dea_lpcontract_dispatch()")!=NULL)
 if _rc {
     capture findfile _dea_lpcontract.ado
     if _rc {
