@@ -1,0 +1,38 @@
+CROSSGAME RECOVERY CONTRACT REGRESSION
+
+From the package root:
+    python3 -B tests/run.py --suite crossgame_recovery
+    python3 -B tests/run.py --suite crossgame_models
+
+The common runner discovers a local Stata executable; DEA_STATA or --stata can
+select another installation. No source edits, Git history or private research
+folders are needed. NumPy/SciPy requirements are in tests/requirements.txt.
+All outputs belong outside the package. Only the common runner shareable-summary
+is designed for sharing; raw generated do-files and logs can contain local paths.
+
+The fixture has synthetic quantities and selected public matrix references only.
+It covers near ties, a failed game LP, and the prior last complete Nash state.
+The primary-face/lifted-game certificates were independently checked with exact
+rational arithmetic before accepting these references. The broad model grid also
+compares completed Nash iterations with independent HiGHS LPs. This fixed contract
+suite checks public diagnostics, counts, source and atomic output/state handling;
+it does not recertify every underlying LP or guarantee all datasets.
+
+Thirty cases include cold/warm/reload, a cleared Mata workspace, missing helper
+functions and files, mismatched readiness, string IDs and shifted observations,
+core/crosseff coexistence, small matrix limits, unresolved reason propagation,
+error 3498 and simulated Break return 1, and a recovered pair in a discarded Nash
+iteration. Fault injections modify only temporary copies outside the package.
+A physical keyboard Break or process termination is not simulated.
+
+Native optimizer boundary behavior and exact saved selections were verified on
+Stata/MP 16.1 macOS. A different Stata/native implementation may remove a failure
+or choose another optimum. Such a changed fixed-reference test requires review;
+it is not by itself proof of a mathematical defect. Do not edit fixtures simply
+to make a changed result pass. Windows execution is not validated here.
+
+Runtime recovery is limited to 32 DMUs, 16 variables including the game lift, and 256
+attempts, plus existing exact work/limb/pivot limits. Unknown is not infeasible.
+The source/status fields and original self versus certified target distinguish
+what was returned. Accepted native results are not silently relabeled exact.
+The package does not send external messages or submit native-IPM reports.

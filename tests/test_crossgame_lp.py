@@ -44,9 +44,15 @@ def main():
   if fault in ['bound','equality','nonfinite']:
    p=target/'_dea_nonte_lp.ado';s=p.read_text();change={'bound':'x[1]=-1000','equality':'x=x:+1000','nonfinite':'x[1]=.'}[fault];s=s.replace('        x=S.parameters()','        x=S.parameters()\n        '+change);p.write_text(s)
   else:
-   p=target/'dea_crossgame.ado';s=p.read_text();needle='    v=J(1,m,.);u=J(1,s,.);value=.'
+   p=target/'_dea_crossgame_core.ado';s=p.read_text();needle='    v=J(1,m,.);u=J(1,s,.);value=.'
    cond={'primary':'mode==0','first_primary':'mode==0 & j==1','secondary':'mode==1 | mode==2','first_game':'mode==3 & d==1 & j==1','second_game':'mode==3 & st_numscalar("gamecalls")==rows(X0)^2+1'}[fault]
    assert needle in s;s=s.replace(needle,needle+'\n    if(mode==3) st_numscalar("gamecalls",st_numscalar("gamecalls")+1)\n    if('+cond+') return(1)',1);p.write_text(s)
+  # These cases test final unavailability, so make the recovery unavailable too.
+  # Native-only failures and successful certified recovery have a separate suite.
+  if fault in ['secondary','first_game','second_game']:
+   p=target/'_dea_crossgame_recovery.ado';s=p.read_text()
+   needle=' n=rows(X);m=cols(X);s=cols(Y);primary_value=.;rc=1';assert s.count(needle)==1
+   s=s.replace(needle,needle+'\n diag[15]=0;diag[16]=3;return(1);',1);p.write_text(s)
   body=PAPER+'dea_crossgame x1 x2 x3=y1 y2,gen(res) matrix detail tol(1e-8)\n'
   if fault in ['primary','bound','equality','nonfinite']:
    body+='assert r(n_failed_primary)==5 & r(nash_status)==2 & r(nash_converged)==0 & r(nash_attempts)==0\nassert r(nash_initial_missing)==25\nassert missing(res_agg,res_ben,res_nash)\n'

@@ -1,6 +1,6 @@
 Cross-efficiency 1.10.4 matched-package installation and verification
 
-Install all 80 files in ado/ together. Ten cross-efficiency helpers are required:
+Install all 83 files in ado/ together. Ten cross-efficiency helpers are required:
 _dea_crosseff_context.ado, _dea_crosseff_simplex.ado, _dea_crosseff_raw.ado,
 _dea_crosseff_cert.ado, _dea_crosseff_diagnostics.ado,
 _dea_crosseff_objective.ado, _dea_crosseff_exactobjective.ado,

@@ -308,3 +308,12 @@
 !/tests/test_crosseff_costunits.py
 !/tests/test_crosseff_costunits_flow.py
 !/tests/test_crosseff_costunits_link.py
+
+# Crossgame certified failure recovery and portable contracts.
+!/INSTALL_CROSSGAME.txt
+!/ado/_dea_crossgame_core.ado
+!/ado/_dea_crossgame_load.ado
+!/ado/_dea_crossgame_recovery.ado
+!/tests/test_crossgame_recovery.py
+!/tests/fixtures/crossgame_recovery.json
+!/tests/CROSSGAME_RECOVERY.txt

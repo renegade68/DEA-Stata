@@ -165,8 +165,8 @@ class Portability(unittest.TestCase):
 
     def test_registry_marks_historical_inputs(self):
         registry = runner.suites()
-        self.assertEqual(len(registry), 87)
-        for name in ("crosseff_costunits", "crosseff_costunits_flow", "crosseff_costunits_link"):
+        self.assertEqual(len(registry), 88)
+        for name in ("crosseff_costunits", "crosseff_costunits_flow", "crosseff_costunits_link", "crossgame_recovery"):
             self.assertEqual(registry[name]["required"], set())
         self.assertIn('crosseff_decoder', registry)
         self.assertIn('crosseff_dyadic', registry)

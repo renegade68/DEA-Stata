@@ -13,6 +13,7 @@ python3 -B tests/run.py --suite smoke
 python3 -B tests/run.py --suite crosseff_raw
 python3 -B tests/run.py --suite crosseff_decoder
 python3 -B tests/run.py --suite crosseff_dyadic
+python3 -B tests/run.py --suite crossgame_recovery
 python3 -B tests/check_publication.py
 ```
 
@@ -1932,3 +1933,18 @@ weights, source data and tolerances are retained. Recovery path 5 reports the
 extra attempt and includes prior work/pivots. Certificate observation files may
 carry `_original_objective_factor.bin`; the checker restores original dual
 units before testing stationarity against the original exact cost.
+
+## Crossgame recovery and command lifecycle
+
+`python3 -B tests/run.py --suite crossgame_recovery` exercises 30 fixed
+synthetic contracts: recovered versus unresolved solves, original observation
+mapping, automatic loading, missing functions, warm/shared state, mixed commands,
+protected outputs, simulated Break, record limits and complete Nash iteration
+acceptance. The independent model grid remains `--suite crossgame_models`.
+See CROSSGAME_RECOVERY.txt for fixed native-boundary references and limitations.
+
+The sample-selection suite also independently verifies the full-sample crossgame
+boundary using NumPy/SciPy. Historical accepted primary/secondary weights and the
+completed Nash prefix must remain unchanged; newly recovered LPs are checked
+against independent LP objectives and every completed iteration, rather than
+requiring an old fallback or interrupted Nash score to remain unchanged.

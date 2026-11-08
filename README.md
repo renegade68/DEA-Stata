@@ -61,7 +61,16 @@ remain numerical-only; rounding and fallback are reported separately.
 The primary calculation and CRS/VRS peer conventions are unchanged. See
 [objective regression](tests/CROSSEFF_OBJECTIVE.txt).
 
-Install the complete matched 80-file `ado/` directory; see
+Crossgame update (`dea_crossgame` 2.4.0): failed secondary/game solves can
+use bounded original-data certificates. Diagnostics distinguish native failures,
+certified recovery, unresolved cases and complete Nash iteration acceptance.
+Original self scores and accepted native solutions are preserved. Failed secondary
+solves use the certified primary optimal face; game recovery retains the same theta.
+Automatic helper loading and temporary outputs preserve existing result columns
+on compute errors. See [installation and verification](INSTALL_CROSSGAME.txt) and
+[the recovery test contract](tests/CROSSGAME_RECOVERY.txt).
+
+Install the complete matched 83-file `ado/` directory; see
 [the cross-efficiency installation guide](INSTALL_CROSSEFF.txt).
 
 Package update (`dea` 2.0.73): the explicit Cooper simplex path now uses
@@ -220,7 +229,7 @@ The game-theoretic commands are exploratory diagnostics, as described in the
 article, and are not fully specified structural game estimators. Command-specific
 assumptions and limitations are documented in the linked help files.
 
-`dea_crossgame` 2.3.0 validates and scales CRS input LPs, uses nonnegative
+`dea_crossgame` 2.4.0 validates and scales CRS input LPs, uses nonnegative
 weights, and implements `matrix`/`detail` output with stage and iteration
 results. Nash requires complete initialization and complete pairwise iterations;
 a failed update retains the last complete state and reports failure, while an

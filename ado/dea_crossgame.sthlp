@@ -4,7 +4,7 @@
 {* Help revision 2026-11-01: if/in defines both evaluation and reference samples.}{...}
 {* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* version 2.3.0  02nov2026}{...}
+{* version 2.4.0  08nov2026}{...}
 {viewerjumpto "Related article" "dea_crossgame##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_crosseff" "help dea_crosseff"}{...}
@@ -162,6 +162,102 @@ The following variables are created depending on {opt strategy()}:
 {p2col:{it:prefix}{cmd:_ben}}benevolent cross-efficiency score{p_end}
 {p2col:{it:prefix}{cmd:_nash}}Nash equilibrium cross-efficiency score{p_end}
 
+{marker recovery}{...}
+{title:Certified recovery after a native failure}
+
+{pstd}
+Version 2.4.0 preserves accepted native results and attempts a bounded recovery
+only when a secondary or game LP is unavailable. The common simplex proposes a
+basis; exact arithmetic verifies the primal constraints, dual signs and objective
+before a recovery is accepted. This certification uses the original binary64
+input values. Exported double weights are checked against the requested tolerance.
+An ordinary native success is not relabeled as an exact certificate.{p_end}
+
+{pstd}
+For a failed aggressive/benevolent solve, the original-data primary LP is
+certified and its optimal face is used for the secondary problem. A rounded
+primary efficiency is not inserted again as an equality RHS. The original
+reported self score is retained. The diagnostic fields {cmd:self_certified} and
+{cmd:self_delta} show the rounded certified target and its displayed difference
+from {cmd:self_initial}; a zero displayed difference need not imply exact equality.
+The weighted-output secondary objective is unchanged. For a failed game LP,
+z=v*x_d and theta_d*z-u*y_d<=0 avoid rounding theta_d*x_d before solving.
+The same theta and original constraints are retained.{p_end}
+
+{pstd}
+Recovery is limited to 32 selected observations, 16 variables (including the
+additional game variable), and 256 recovery attempts per command. Existing exact
+solver work, limb and pivot limits apply. Unresolved results retain the primary
+fallback or last complete Nash state; no constraint relaxation or tolerance increase
+is used. A native warning about infeasibility describes that solver attempt.
+The final recovery diagnostics and Nash status determine the returned result;
+an unresolved recovery is not a mathematical infeasibility certificate.{p_end}
+
+{pstd}
+Recovery counts are returned even without {cmd:matrix} or {cmd:detail}. When
+records exist and {cmd:c(matsize)>=32}, {cmd:r(recovery_diagnostics)} stores the
+first min(256,c(matsize)) eligible failed-call records, with selected-observation
+indices and original observation numbers. It never stores an arbitrary numeric
+encoding of a string DMU label. Counts include records omitted by the attempt or
+matrix-size limit. With smaller matrix sizes only aggregate diagnostics are
+returned. No diagnostic files or command-specific permanent Mata counters are created.{p_end}
+
+{pstd}
+Additional scalars: {cmd:r(recovery_version)=11401}, {cmd:r(n_recovery_attempted)},
+{cmd:r(n_recovered)}, {cmd:r(n_recovery_unresolved)}, {cmd:r(n_recovery_limit)},
+{cmd:r(n_native_failed_agg)}, {cmd:r(n_native_failed_ben)}, {cmd:r(n_native_failed_game)},
+{cmd:r(n_recovered_agg)}, {cmd:r(n_recovered_ben)}, {cmd:r(n_recovered_game)},
+{cmd:r(n_primary_target_changed)}, {cmd:r(max_primary_target_change)},
+{cmd:r(max_recovery_residual)}, {cmd:r(n_recovery_rows)}, and
+{cmd:r(n_recovery_rows_omitted)}. Unresolved includes attempts skipped by the
+256-attempt limit. Target-change counts cover accepted secondary recoveries with
+a nonzero displayed delta. The maximum residual covers accepted recovered points.
+Game recovery counts include solves in an iteration that may subsequently be
+discarded; {cmd:iteration_accepted} discloses that distinction.{p_end}
+
+{pstd}
+Diagnostic columns, in order:{break}
+{cmd:iteration evaluator observation mode peer peer_observation}{break}
+{cmd:native_converged native_error native_value native_rc}{break}
+{cmd:self_initial self_certified self_delta theta recovered reason}{break}
+{cmd:primary_cert primary_reason secondary_cert secondary_reason}{break}
+{cmd:primary_ops secondary_ops max_limbs primary_pivots secondary_pivots}{break}
+{cmd:export_eq export_ineq export_gap export_bounds export_error}{break}
+{cmd:objective_value iteration_accepted}.{p_end}
+
+{pstd}
+{cmd:mode}: 1 aggressive, 2 benevolent, 3 game. Secondary iteration is 0.
+The {cmd:evaluator} index denotes the evaluator in secondary solves and target j
+in a game solve; {cmd:peer} is the protected peer d in the game matrix.
+{cmd:native_value} is the optimizer's objective before command sign conversion;
+{cmd:native_rc}=1 means unavailable or rejected by the native acceptance checks.
+{cmd:recovered}: 1 accepted certified recovery, 0 unresolved.
+{cmd:reason}: 0 accepted; 1 domain/dimension limit; 2 exact mapping unavailable;
+3 primary/game certificate unavailable; 4 exact secondary objective build unavailable;
+5 secondary certificate unavailable; 6 point export/arithmetic/residual unavailable;
+7 objective export/range unavailable. Certificate fields equal 1 only when verified;
+0/-1 mean unverified/unavailable, not infeasible. Additional reason/operation/pivot
+fields describe the bounded certificate procedure; unused fields are missing.
+For game records {cmd:iteration_accepted} is 1 only if every pair in that iteration
+was accepted; 0 denotes a discarded update. It is missing for secondary records.
+{cmd:export_eq}, {cmd:export_ineq}, and {cmd:export_gap} are scaled exact residuals
+of the actual exported double point, and {cmd:export_bounds} reports nonnegativity.
+{cmd:objective_value} uses the secondary minimization sign (negative weighted-output
+sum for benevolent) or the positive game score.{p_end}
+
+{pstd}
+With {cmd:matrix}, {cmd:r(source_agg)} and {cmd:r(source_ben)} distinguish
+0 primary unavailable, 1 native secondary accepted, 2 certified secondary recovery,
+and 3 primary fallback. Existing {cmd:status_agg}/{cmd:status_ben} retain their
+0/2/3 meanings. Optional matrices exist only for requested strategies. New
+recovery records are command-local, so subsequent calls do not inherit them.{p_end}
+
+{pstd}
+All companion ado files must be installed together. Dependencies are checked
+before result replacement. Solver state is restored on load or compute errors;
+existing result columns are replaced only after computation completes. An error
+or user Break during computation leaves existing result columns intact.{p_end}
+
 {marker results}{...}
 {title:Stored results and failure handling}
 
@@ -176,7 +272,7 @@ and redundant all-zero columns are allowed; 0/0 remains missing.
 
 {pstd}
 Aggressive/benevolent means use available off-diagonal cells. If a secondary
-LP is unavailable, the already accepted primary weights are retained with
+LP remains unavailable after the bounded recovery, the already accepted primary weights are retained with
 status 3. This is a fallback, not a successful secondary optimization. An
 unavailable primary leaves that evaluator's weights missing, although the DMU
 can still receive evaluations from other evaluators. Peer counts disclose
@@ -238,8 +334,8 @@ recreates whole result columns, including their storage types and labels;
 observations not scored by the command do not retain old scores. Variables
 used as model data or identifiers cannot be replaced, even with
 {cmd:replacevars}. Invalid or duplicate output names are rejected before any
-existing result column is changed. This name check does not promise rollback
-of later computation or file-write errors.
+existing result column is changed. Name checks run before computation. Result columns are committed only after
+computation succeeds; existing outputs survive errors during that computation.
 
 {marker examples}{...}
 {title:Examples}
@@ -275,6 +371,8 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 {phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu) strategy(all) replacevars}{p_end}
 {phang2}{cmd:. list dmu _cg_agg _cg_ben _cg_nash}{p_end}
 {phang2}{cmd:. return list}{p_end}
+{phang2}{cmd:. assert r(recovery_version)==11401}{p_end}
+{phang2}{cmd:. if r(n_recovery_rows)>0 matrix list r(recovery_diagnostics)}{p_end}
 
 {pstd}Display cross-efficiency matrix for aggressive strategy{p_end}
 {phang2}{cmd:. dea_crossgame, inputs(capital labor) outputs(output) dmu(dmu) strategy(aggressive) matrix detail replacevars}{p_end}

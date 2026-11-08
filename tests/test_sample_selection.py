@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare qualified DEA calls with physically restricted estimation datasets.
 
-Requires Python 3, Git and Stata 16+. No third-party Python packages are needed.
+Requires Python 3, NumPy/SciPy and Stata 16+. Git is used only without an explicit historical baseline.
 Every case runs in a fresh Stata process with isolated ado paths. The fixture
 includes an excluded, highly productive DMU so reference-set leakage matters.
 """
@@ -102,6 +102,57 @@ local selected_n=r(N)
     return body
 
 
+
+def crossgame_export():
+    from test_crossgame_models import MATS
+    body = 'matrix cg_meta=J(1,11,.)\n'
+    names = ['n_failed_primary','n_failed_agg','n_failed_ben','nash_status',
+             'nash_iterations','nash_attempts','nash_failed_pairs','nash_last_change',
+             'nash_initial_missing','n_missing_agg','n_missing_ben']
+    for k, name in enumerate(names):
+        body += f'matrix cg_meta[1,{k+1}]=r({name})\n'
+    for name in MATS:
+        body += f'mata: savebin("{name}.bin",st_matrix("r({name})"))\n'
+    body += 'mata: savebin("meta.bin",st_matrix("cg_meta"));savebin("data.bin",st_data(.,tokens("id x1 x2 y1 y2")));savebin("scores.bin",st_data(.,tokens("res_agg res_ben res_nash")))\n'
+    return body
+
+
+def crossgame_historical_check(current, historical):
+    # T115: historical fallbacks are not the oracle for certified recoveries.
+    # Keep accepted selections and the completed prefix exactly, and independently
+    # solve every current primary/secondary LP and complete Nash iteration.
+    import numpy as np
+    from test_crossgame_models import verify, readbin
+    old = verify(historical, 2, 2, 'all', 1e-6, 100)
+    new = verify(current, 2, 2, 'all', 1e-6, 100)
+    for name in ['data','self_eff','weights_input','weights_output','ce_initial']:
+        assert (current/(name+'.bin')).read_bytes() == (historical/(name+'.bin')).read_bytes(), name
+    for strategy in ['agg', 'ben']:
+        previous = readbin(historical/('status_'+strategy+'.bin')).ravel()
+        status = readbin(current/('status_'+strategy+'.bin')).ravel()
+        source = readbin(current/('source_'+strategy+'.bin')).ravel()
+        accepted = previous == 2
+        # Later reviewed baselines may already contain certified successes.
+        assert np.all(status[accepted] == 2)
+        assert np.all((source[accepted] == 1) | (source[accepted] == 2))
+        for kind in ['input', 'output']:
+            name = 'weights_'+strategy+'_'+kind+'.bin'
+            before, after = readbin(historical/name), readbin(current/name)
+            np.testing.assert_array_equal(after[accepted], before[accepted])
+            changed = np.any(after != before, axis=1)
+            assert np.all(source[changed] == 2) and np.all(previous[changed] == 3)
+        if np.all(accepted):
+            column = 0 if strategy == 'agg' else 1
+            np.testing.assert_array_equal(readbin(current/'scores.bin')[:,column],
+                                          readbin(historical/'scores.bin')[:,column])
+    previous = readbin(historical/'nash_history.bin')
+    np.testing.assert_array_equal(readbin(current/'nash_history.bin')[:len(previous)], previous)
+    assert new['secondary_feasible_fallback'] == 0 and new['nash_status'] == 0
+    (current/'independent_review.json').write_text(json.dumps(dict(
+        historical=old, current=new, accepted_native_weights_preserved=True,
+        original_primary_and_initial_state_preserved=True, completed_prefix_preserved=True), indent=2)+'\n')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--stata', required=True)
@@ -136,7 +187,7 @@ def main():
                                                    baseline_sha256=baseline_hashes, stata=args.stata), indent=2))
     results = []
 
-    def run(name, body, source=pkg, force=False):
+    def run(name, body, source=pkg, force=False, check=None):
         if not force and args.only and not re.search(args.only, name): return None
         work = out/name; work.mkdir()
         head = 'version 16\nclear all\nset more off\nset linesize 120\n'
@@ -149,6 +200,12 @@ def main():
             proc = subprocess.run([args.stata, '-b', 'do', 'test.do'], cwd=work, capture_output=True, timeout=180)
             log = (work/'test.log').read_text(errors='replace') if (work/'test.log').exists() else proc.stderr.decode(errors='replace')
             row = dict(test=name, passed='TEST_PASS' in log.splitlines(), seconds=round(time.monotonic()-start, 3))
+            if row['passed'] and check:
+                try:
+                    check(work)
+                except Exception as error:
+                    row['passed'] = False
+                    row['oracle_error'] = repr(error)
             if not row['passed']: row['tail'] = log[-2200:]
         except subprocess.TimeoutExpired:
             row = dict(test=name, passed=False, error='timeout')
@@ -200,7 +257,12 @@ def main():
         # Baseline controls preserve qualifier-free numerical behavior exactly.
         compare_name = f'unchanged_full_{key}'
         baseline_form = 'A' if key == 'bootstrap' else 'B'
-        control = run(f'baseline_full_{key}', DATA + command(key, baseline_form) + '\nkeep id res*\nsave "expected.dta"\n',
+        extra = 'matrix detail' if key == 'crossgame' else ''
+        writer = export = ''
+        if key == 'crossgame':
+            from test_core_retries import WRITER
+            writer, export = WRITER, crossgame_export()
+        control = run(f'baseline_full_{key}', writer + DATA + command(key, baseline_form, options=extra) + '\n' + export + 'keep id res*\nsave "expected.dta"\n',
                       baseline, force=bool(args.only and re.search(args.only, compare_name)))
         if control:
             # F03 repairs the smoother and CI quantiles. Preserve point scores as
@@ -232,7 +294,15 @@ drop `intensity' `expected'
                 comparison=games_historical_check(key,PROFILES[key][1],control/'expected.dta').replace('assert note=="keep me"\n','')
             if key == 'fuzzy':
                 comparison=fuzzy_historical_check(PROFILES[key][1],control/'expected.dta')
-            run(compare_name, DATA + command(key) + '\n'+comparison)
+            if key == 'crossgame':
+                # The dominant-DMU fixture now has certified secondary/game recovery.
+                # Do not require failed historical scores to remain unchanged.
+                provenance = ''.join(f'mata: savebin("{name}.bin",st_matrix("r({name})"))\n'
+                                     for name in ['source_agg','source_ben','recovery_diagnostics'])
+                run(compare_name, writer + DATA + command(key, options=extra) + '\n' + export + provenance,
+                    check=lambda work: crossgame_historical_check(work, control))
+            else:
+                run(compare_name, DATA + command(key) + '\n'+comparison)
         nscalar = PROFILES[key][2][0]
         first = PROFILES[key][1][0]
         run(f'old_ignored_if_{key}', DATA + command(key, baseline_form, qualifier='if group') +

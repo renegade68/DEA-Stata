@@ -1,0 +1,66 @@
+Crossgame 2.4.0 matched-package installation and verification
+
+Install the complete 83-file ado/ directory together, not dea_crossgame.ado alone.
+Three companions are required:
+    _dea_crossgame_core.ado
+    _dea_crossgame_load.ado
+    _dea_crossgame_recovery.ado
+The exact certificate/arithmetic, common simplex, non-TE LP, parser and output
+protection helpers in the same directory are also required. INSTALL_COOPER.txt
+lists the complete inventory. This is a local-folder installation; the package
+does not provide net-install metadata.
+
+Use a fresh licensed Stata 16+ session, or save work and clear all before upgrading.
+Place the complete folder first on adopath and confirm the selected command:
+    adopath ++ "/absolute/path/to/DEA-Stata/ado"
+    which dea_crossgame
+    findfile _dea_crossgame_core.ado
+    findfile _dea_crossgame_load.ado
+    findfile _dea_crossgame_recovery.ado
+    findfile dea_crossgame.sthlp
+Core/recovery readiness is 11401; all three companions are version 1.0.0.
+These are compatibility checks, not user options. No manual Mata preload or
+diagnostic output directory is required. Keep a complete older package to roll
+back; do not combine individual files from different releases.
+
+CROSSGAME_INSTALL_EXAMPLE_BEGIN
+clear
+input double id x y
+1 1 1
+2 1.000001 1.000001
+3 2 1
+end
+dea_crossgame x=y,dmu(id) gen(cg) tolerance(1e-9) matrix detail
+assert r(recovery_version)==11401
+assert r(n_failed_primary)==0
+assert r(nash_status)==0
+assert r(n_recovered)+r(n_recovery_unresolved)==r(n_native_failed_agg)+r(n_native_failed_ben)+r(n_native_failed_game)
+if r(n_recovery_rows)>0 matrix list r(recovery_diagnostics)
+matrix list r(source_agg)
+matrix list r(source_ben)
+dea_crossgame x=y,dmu(id) gen(cg) strategy(nash) replacevars
+assert r(n_recovery_attempted)==0
+CROSSGAME_INSTALL_EXAMPLE_END
+
+Recovery is failure-only. The command retains accepted native values and the
+original reported self score. Secondary recovery uses the original-data primary
+optimal face; game recovery avoids rounding theta*x before the certified solve.
+Read r(recovery_diagnostics), aggregate counts, source_agg/source_ben and the
+Nash status together. A recovered game pair can still belong to a discarded
+iteration. Iteration-limit results are not confirmed equilibria. Native warning
+messages describe the native attempt, not the final certification decision.
+
+Recovery has limits of 32 DMUs, 16 variables and 256 attempts and existing arithmetic budgets.
+Detailed records may be truncated by c(matsize); aggregates count omitted rows.
+An unresolved solve is not an infeasibility proof. The exact checks use binary64
+input values, and exported double weights satisfy the requested residual checks.
+See help dea_crossgame for all 32 columns, reason codes and scope limitations.
+
+From a clone or extracted ZIP, with no personal source paths:
+    python3 -B tests/run.py --suite crossgame_recovery
+    python3 -B tests/run.py --suite crossgame_models
+Set DEA_STATA locally if discovery cannot locate the licensed executable.
+Use --with-r for an optional crossgame_models paper comparison (R lpSolve).
+The default outputs are temporary and private; use --output outside the package
+for durable local results. The runner neither installs software nor changes
+identity settings. No native-IPM report is transmitted automatically.

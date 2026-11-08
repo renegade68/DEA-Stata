@@ -38,6 +38,9 @@ def suites(repo=REPO):
             continue
         if p.stem in ('test_output_protection', 'test_sample_selection'):
             required.add('--baseline-ado')
+        if p.stem == 'test_sample_selection':
+            # Its historical crossgame control uses the shared independent LP verifier.
+            dependencies.update({'numpy', 'scipy'})
         key = p.stem.removeprefix('test_')
         result[key] = dict(file=name, flags=flags, required=required - {'--stata', '--output'},
                            dependencies=dependencies & {'numpy', 'scipy'})

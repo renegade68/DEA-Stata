@@ -78,7 +78,7 @@ def main():
     for name in package_files(REPO):
         raw=(REPO/name).read_bytes();(pkg/Path(name).name).write_bytes(raw);hashes[name]=hashlib.sha256(raw).hexdigest()
     audit=out/'counter_ado';shutil.copytree(pkg,audit)
-    p=audit/'dea_crossgame.ado';code=p.read_text();needle='    X = st_data(., tokens(inputs), touse)'
+    p=audit/'_dea_crossgame_core.ado';code=p.read_text();needle='    X = st_data(., tokens(inputs), touse)'
     assert code.count(needle)==1
     p.write_text(code.replace(needle,'    st_numscalar("CG_CALLS",st_numscalar("CG_CALLS")+1) // TEST ONLY\n'+needle))
     (out/'manifest.json').write_text(json.dumps(dict(source_sha256=hashes,baseline=str(a.baseline_ado),stata=a.stata),indent=2)+'\n')
