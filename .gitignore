@@ -303,3 +303,8 @@
 !/tests/test_crosseff_dyadic.py
 !/tests/requirements.txt
 !/tests/PUBLICATION.txt
+# Exact objective cost-unit recovery and portable regression.
+!/ado/_dea_crosseff_costunits.ado
+!/tests/test_crosseff_costunits.py
+!/tests/test_crosseff_costunits_flow.py
+!/tests/test_crosseff_costunits_link.py

@@ -42,7 +42,9 @@ def check(prefix):
   x=[F(integer(row),D) for row in read('num')]
   assert all(dot(a,x)==b for a,b in zip(G[:ne],h[:ne])) and all(dot(a,x)<=b for a,b in zip(G[ne:],h[ne:]))
   ids=[int(v)-1 for v in read('basis').ravel()];ex=list(map(int,read('exponent').ravel()));Db=integer(read('basis_den').ravel());dual=[F(0)]*len(G)
-  for i,row in enumerate(read('dual')):dual[ids[i]]=F(integer(row),Db)*F(2)**(ex[-1]-ex[i])
+  factor_path=Path(str(prefix)+'_original_objective_factor.bin');factor=integer(read('original_objective_factor').ravel()) if factor_path.exists() else 1
+  assert factor>0
+  for i,row in enumerate(read('dual')):dual[ids[i]]=factor*F(integer(row),Db)*F(2)**(ex[-1]-ex[i])
   assert all(v>=0 for v in dual[ne:])
   assert [sum((a[j]*v for a,v in zip(G,dual)),F(0)) for j in range(len(c))]==c
   assert dot(c,x)==dot(h,dual)

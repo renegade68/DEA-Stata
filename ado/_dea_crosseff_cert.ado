@@ -1,4 +1,4 @@
-*! version 1.0.2 08nov2026
+*! version 1.0.3 08nov2026
 *! Bounded exact cross-efficiency certificates, recovery and terminal ray checks.
 version 16.0
 capture mata: mata drop _c58f_residual_sign()
@@ -597,8 +597,34 @@ real rowvector _c58f_quotient(real rowvector a0,real rowvector b0,
 }
 real rowvector _c58f_update_quotient(real rowvector a,real rowvector b,
  real rowvector c,real rowvector d,real rowvector den,struct _C58_Work scalar W) {
- real rowvector x,y
- if(_c58f_wide_product(a,b,W) | _c58f_wide_product(c,d,W)) return(_c58f_quotient(a,b,c,d,den,W))
+ real rowvector x,y,q
+ real scalar ab,cd
+ // Inputs are normalized signed integers. Keep the ordinary path verbatim.
+ if(_c58f_wide_product(a,b,W) | _c58f_wide_product(c,d,W)) {
+  if(W.error) return((0,0))
+  if(den[1]==0) {W.error=3;return((0,0));}
+  // Charge a conservative bound for comparisons and an output copy before
+  // taking any shortcut. Every input, including den, must fit the same cap.
+  if(!_c58b_tick(W,8*(cols(a)+cols(b)+cols(c)+cols(d)+cols(den)),
+   max((cols(a),cols(b),cols(c),cols(d),cols(den)))-1)) return((0,0))
+  ab=a[1]*b[1];cd=c[1]*d[1]
+  // Equal signed products: factor order and simultaneous sign reversal
+  // do not change the product. No tolerance or oversized product is used.
+  if(ab==cd) {
+   if((_c58b_cmp(a,c)==0 & _c58b_cmp(b,d)==0) |
+      (_c58b_cmp(a,d)==0 & _c58b_cmp(b,c)==0)) return((0,0))
+  }
+  // One product is zero; cancel an exactly matching denominator factor.
+  if(cd==0) {
+   if(_c58b_cmp(a,den)==0) {q=b;q[1]=q[1]*a[1]*den[1];return(q);}
+   if(_c58b_cmp(b,den)==0) {q=a;q[1]=q[1]*b[1]*den[1];return(q);}
+  }
+  if(ab==0) {
+   if(_c58b_cmp(c,den)==0) {q=d;q[1]=-q[1]*c[1]*den[1];return(q);}
+   if(_c58b_cmp(d,den)==0) {q=c;q[1]=-q[1]*d[1]*den[1];return(q);}
+  }
+  return(_c58f_quotient(a,b,c,d,den,W))
+ }
  x=_c58b_mul(a,b,W);y=_c58b_mul(c,d,W)
  return(_c58b_div(_c58b_add(x,_c58b_neg(y),W),den,W))
 }
@@ -905,7 +931,7 @@ real rowvector _c58d_double(real rowvector a0,real rowvector d0)
 }
 
 
-real scalar _c58_cert_ready() return(6203)
+real scalar _c58_cert_ready() return(6204)
 // Exact dyadic scaling only. Free variables use opposite columns. Each
 // coefficient must round-trip under the column scaling or certification stops.
 real matrix _c58_map(real matrix E,real matrix U,real rowvector c,real scalar free,|real scalar map_reason)
@@ -1021,9 +1047,7 @@ real colvector _c61_pick(transmorphic scalar A,real colvector choices,
   for(k=i+1;k<=m;k++) {
    a=asarray(T,(k,col))
    for(j=1;j<=n;j++) if(unused[j]) {
-    b=_c58b_mul(pivot,asarray(T,(k,j)),W)
-    v=_c58b_mul(a,asarray(T,(i,j)),W)
-    v=_c58b_div(_c58b_add(b,_c58b_neg(v),W),previous,W)
+    v=_c58f_update_quotient(pivot,asarray(T,(k,j)),a,asarray(T,(i,j)),previous,W)
     asarray(T,(k,j),v)
    }
    asarray(T,(k,col),(0,0))

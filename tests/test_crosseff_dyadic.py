@@ -15,11 +15,11 @@ def main():
     ap.add_argument('--output',required=True,type=Path)
     options=ap.parse_args()
     out=options.output.resolve();out.mkdir(parents=True,exist_ok=False);rng=random.Random(20261111)
-    def pack(x):
+    def pack(x,cap=128):
      s=(x>0)-(x<0);x=abs(x);a=[s]
      while x:a.append(x%(2**26));x//=2**26
-     assert len(a)<=129
-     return a+[0]*(129-len(a))
+     assert len(a)<=cap+1
+     return a+[0]*(cap+1-len(a))
     def write(n,A):
      A=np.array(A,dtype='<f8');(out/n).write_bytes(struct.pack('<ii',*A.shape)+A.tobytes())
     cases=[]
@@ -59,6 +59,43 @@ def main():
     for z in residuals:
      start=len(flat)+1;flat.extend(pack(v) for v in z['a']+z['n']+[z['rhs'],z['den']]);meta.append([start,len(z['a']),z['limit'],z['limbs'],z['prior']])
     write('residual_inputs.bin',flat);write('residual_meta.bin',meta)
+    shortcuts=[];srng=random.Random(20261108)
+    def shortcut(vals,tag,error=0,limit=10000000,limbs=128,prior=0,spent=0):
+     a,b,c,d,den=vals;want=F(a*b-c*d,den) if den else None
+     shortcuts.append(dict(vals=vals,tag=tag,error=error,want=want,limit=limit,limbs=limbs,prior=prior,spent=spent))
+    for i in range(64):
+     a=srng.getrandbits(1800+i%31)|1|(1<<(1800+i%31));b=srng.getrandbits(1900+i%37)|1|(1<<(1900+i%37))
+     for sa in [-1,1]:
+      for sb in [-1,1]:
+       for swap in [False,True]:
+        c,d=(-sb*b,-sa*a) if swap else (-sa*a,-sb*b)
+        shortcut([sa*a,sb*b,c,d,(-1 if i%2 else 1)*(i+1)],'signed_product_cancellation')
+       for position in range(4):
+        vals=[sa*a,sb*b,0,0] if position<2 else [0,0,sa*a,sb*b]
+        den=vals[position];shortcut(vals+[den],'denominator_factor')
+        shortcut(vals+[-den],'negative_denominator_factor')
+     shortcut([a,b,a,b+2,1],'near_equal_small_nonzero',2)
+     shortcut([a,b,-a,b,1],'opposite_product_sign',2)
+     shortcut([a,b,0,0,a+2],'near_denominator_factor',2)
+    a=(1<<1900)+1;b=(1<<1800)+3
+    for vals in [[a,b,a,b,0],[a,b,0,0,0]]:shortcut(vals,'zero_denominator',3)
+    for code in [1,2,3,4,5]:shortcut([a,b,a,b,0],'prior_error',code,prior=code,spent=91)
+    size=lambda x:1+max(1,(abs(x).bit_length()+25)//26)
+    for vals in [[a,b,a,b,1],[a,b,0,0,a],[0,0,a,b,-b]]:
+     charge=8*sum(size(x) for x in vals)
+     shortcut(vals,'exact_remaining_budget',limit=charge+19,spent=19)
+     shortcut(vals,'one_short_budget',1,limit=charge+18,spent=19)
+     shortcut(vals,'zero_budget',1,limit=0)
+     shortcut(vals,'small_limb_cap',2,limbs=1)
+    last=(1<<3327)+3;over=(1<<3328)+3
+    shortcut([a,last,0,0,a],'last128_output')
+    shortcut([a,over,0,0,a],'input129_refused',2)
+    shortcut([a,b,a,b,over],'denominator129_refused',2)
+    shortcut([1<<1664,1<<1664,0,0,1],'result129_refused',2)
+    shortcut([3<<1500,1<<1500,0,0,1<<3001],'fractional_power2',3)
+    shortcut([5<<1800,7<<1800,0,0,3<<1000],'fractional_odd',3)
+    flat=[pack(v,129) for z in shortcuts for v in z['vals']]
+    write('shortcut_inputs.bin',flat);write('shortcut_meta.bin',[[z[k] for k in ['limit','limbs','prior','spent']] for z in shortcuts])
     for name in ['PLUS','PERSONAL','SITE','OLDPLACE']:(out/name).mkdir()
     code='version 16\nclear all\nset more off\nset processors 1\n'
     for name in ['PLUS','PERSONAL','SITE','OLDPLACE']:code+=f'sysdir set {name} "{out/name}"\n'
@@ -103,6 +140,17 @@ def main():
       Q[i,.]=(signum,W.error,W.maxlimbs,W.ops,untouched,W.limit,W.limbs)
      }
      savebin("residual_results.bin",Q)
+     M=loadbin("shortcut_inputs.bin");K=loadbin("shortcut_meta.bin");Q=J(rows(K),136,0)
+     for(i=1;i<=rows(K);i++) {
+      s=(i-1)*5;a=_c58b_norm(M[s+1,.]);b=_c58b_norm(M[s+2,.]);c=_c58b_norm(M[s+3,.]);d=_c58b_norm(M[s+4,.]);den=_c58b_norm(M[s+5,.]);old=M[(s+1)..(s+5),.]
+      W.ops=K[i,4];W.limit=K[i,1];W.limbs=K[i,2];W.maxlimbs=0;W.error=K[i,3]
+      wide=_c58f_wide_product(a,b,W)|_c58f_wide_product(c,d,W)
+      v=_c58f_update_quotient(a,b,c,d,den,W)
+      untouched=all(a:==_c58b_norm(old[1,.])) & all(b:==_c58b_norm(old[2,.])) & all(c:==_c58b_norm(old[3,.])) & all(d:==_c58b_norm(old[4,.])) & all(den:==_c58b_norm(old[5,.]))
+      Q[i,1..7]=(W.error,W.maxlimbs,W.ops,wide,untouched,W.limit,W.limbs);Q[i,8..(7+cols(v))]=v
+     }
+     savebin("shortcut_results.bin",Q)
+
     }
     run_tests()
     end
@@ -114,14 +162,24 @@ def main():
     log=(out/'test.log').read_text(errors='replace');assert p.returncode==0 and 'CROSSEFF_DYADIC_PASS' in log.splitlines(),log[-3000:]
     Q=readbin(out/'quotient_results.bin')
     for i,z in enumerate(cases):
-     for row in Q[2*i:2*i+2]:
-      assert row[0]==z['error'],(i,z['tag'],row[:7],z['error']);assert row[4]==1 and row[5]==z['limit'] and row[6]==z['limbs']
-      if not z['error']:assert integer(row[7:])==z['want'].numerator and row[1]<=128
+     for interface,row in enumerate(Q[2*i:2*i+2],1):
+      expected_error=0 if z['tag']=='odd_intermediate_over_limit' and interface==2 else z['error']
+      assert row[0]==expected_error,(i,z['tag'],row[:7],expected_error);assert row[4]==1 and row[5]==z['limit'] and row[6]==z['limbs']
+      if not expected_error:assert integer(row[7:])==z['want'].numerator and row[1]<=128
     R=readbin(out/'residual_results.bin')
     for z,row in zip(residuals,R):
      want=sum(a*n for a,n in zip(z['a'],z['n']))-z['rhs']*z['den'];assert row[1]==z['error'] and row[4]==1 and row[5]==z['limit'] and row[6]==z['limbs']
      if not z['error']:assert row[0]==(want>0)-(want<0) and row[2]<=128
-    summary=dict(passed=True,quotient_cases=len(cases),quotient_interfaces=2,nonzero_expected_quotients=sum(z["want"] is not None and z["want"]!=0 for z in cases),zero_expected_quotients=sum(z["want"]==0 for z in cases),quotient_evaluations=len(Q),wide_quotient_cases=int(sum(Q[::2,3])),quotient_errors_refused=sum(bool(z['error']) for z in cases),residual_cases=len(residuals),residual_error_controls=3,exact_fraction_identities=True,ordinary_results_and_costs_preserved=True,inputs_and_limits_unchanged=True,Stata_batches=1)
+    S=readbin(out/'shortcut_results.bin')
+    for z,row in zip(shortcuts,S):
+     assert row[0]==z['error'],(z['tag'],row[:7],z['error'])
+     assert row[4]==1 and row[5]==z['limit'] and row[6]==z['limbs'] and row[2]>=z['spent']
+     if z['prior']:assert row[2]==z['spent'] and row[1]==0
+     if not z['error']:
+      assert z['want'].denominator==1 and integer(row[7:])==z['want'].numerator
+      assert row[1]<=z['limbs'] and row[2]<=z['limit']
+     if z['tag']=='exact_remaining_budget':assert row[2]==z['limit']
+    summary=dict(passed=True,shortcut_cases=len(shortcuts),shortcut_errors_refused=sum(bool(z["error"]) for z in shortcuts),shortcut_initial_work_preserved=True,shortcut_exact_fraction_checks=True,quotient_cases=len(cases),quotient_interfaces=2,nonzero_expected_quotients=sum(z["want"] is not None and z["want"]!=0 for z in cases),zero_expected_quotients=sum(z["want"]==0 for z in cases),quotient_evaluations=len(Q),wide_quotient_cases=int(sum(Q[::2,3])),quotient_errors_refused=sum(bool(z['error']) for z in cases),residual_cases=len(residuals),residual_error_controls=3,exact_fraction_identities=True,ordinary_results_and_costs_preserved=True,inputs_and_limits_unchanged=True,Stata_batches=1)
     (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
     print(json.dumps(summary),flush=True)
 

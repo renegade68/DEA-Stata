@@ -1,4 +1,4 @@
-*! version 1.1.0 08nov2026
+*! version 1.1.1 08nov2026
 *! Failure-only certified original-unit weights and bounded exact peer arithmetic.
 version 16.0
 capture mata: mata drop _c84_work()
@@ -238,7 +238,7 @@ real rowvector _c84_guard(struct _C84_Model scalar A,real rowvector x,
  gap=_c84_value(r);if(_c84_gt(r,qt,W)) ok=0
  return((ok & bounds & !W.error,eq,iq,gap,bounds,W.error,W.ops,W.maxlimbs))
 }
-real scalar _c84_ready() return(8403)
+real scalar _c84_ready() return(8404)
 struct _C84_Q scalar _c84_mul(struct _C84_Q scalar a,struct _C84_Q scalar b,struct _C58_Work scalar W)
 {
  struct _C84_Q scalar q
@@ -284,7 +284,8 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
  real rowvector link,real rowvector od)
 {
  struct _C84_Model scalar A,last_valid
- struct _C58_Cert scalar p,s
+ struct _C58_Cert scalar p,s,prior_secondary
+ struct _C107_Result scalar cost_retry
  struct _C58_Work scalar W
  struct _C84_Q scalar opt
  transmorphic scalar exactC
@@ -350,6 +351,13 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
    _c70_build(X,Y,index,out,method=="aggressive",Traw,c2,exactC,ce,od)
    if(od[2]!=1) {rd[11]=12;return;}
    _c70_fit(c2,F,fb,A.qU*A.S,A.qub,tol,exactC,ce,od,s,G2,h2,decoder_extended)
+   // One failure-only attempt. Keep the exact original cost and explicit unit
+   // context alive through primal conversion and final diagnostics.
+   if(_c108_needed(s)) {
+    prior_secondary=s
+    cost_retry=_c107_attempt(-c2,G2,h2,rows(F),s.basis,exactC,ce,s.ops,s.trace62[13],decoder_extended)
+    s=_c108_join(prior_secondary,cost_retry)
+   }
    rd[7..8]=(s.status,s.reason);sd=_c60_certdiag(s,rows(F));st=s.trace62
    link[2]=s.status;link[6]=s.ops;link[8]=s.solver_status
    if(s.trace62[16]==1) rd[11]=4

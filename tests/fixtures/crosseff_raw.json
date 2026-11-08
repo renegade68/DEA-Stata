@@ -1,5 +1,5 @@
 {
-  "provenance": "Original references: T83 independently certified/export-verified original models and T81 accepted outputs, T84 baseline Lim-Zhu rows, and Fraction-derived peer boundary values. Version1.10.1 changes only evaluator1 in nine ray_p1020 VRS configurations: weights are derived from the candidate-selected exact primal/dual certificates after independent verification, rational raw-unit mapping and one binary64 conversion. Observed floating results are not copied to select the new weights. Other fixed references, data and tolerances are unchanged. Version1.10.2 changes only three secondary stage entries in two ray_p1020 VRS output configurations, and adds finite/unbounded expectations from independent exact primal/dual or feasible-point/improving-ray verification. All data, weights, self values and peer references are preserved. Version1.10.3 adds four primary models through a single failure-only exact fit after unsuccessful numerical proposals. New selected weights and self are derived from independently checked exact certificates and one binary64 conversion; earlier accepted evaluator weights, self and peer rows are preserved. Raw inputs and tolerances are unchanged.",
+  "provenance": "Original references: T83 independently certified/export-verified original models and T81 accepted outputs, T84 baseline Lim-Zhu rows, and Fraction-derived peer boundary values. Version1.10.1 changes only evaluator1 in nine ray_p1020 VRS configurations: weights are derived from the candidate-selected exact primal/dual certificates after independent verification, rational raw-unit mapping and one binary64 conversion. Observed floating results are not copied to select the new weights. Other fixed references, data and tolerances are unchanged. Version1.10.2 changes only three secondary stage entries in two ray_p1020 VRS output configurations, and adds finite/unbounded expectations from independent exact primal/dual or feasible-point/improving-ray verification. All data, weights, self values and peer references are preserved. Version1.10.3 adds four primary models through a single failure-only exact fit after unsuccessful numerical proposals. New selected weights and self are derived from independently checked exact certificates and one binary64 conversion; earlier accepted evaluator weights, self and peer rows are preserved. Raw inputs and tolerances are unchanged. T108 research candidate adds exact positive-cost-factor recovery for evaluator5 of four ray_p1020 VRS legacy secondary models. Independent original-cost certificates give three optima and one unbounded ray. Three stage entries advance to2; output-benevolent evaluator5 uses analytically checked v=(0,0),u=(2^-1020,0),w=1. The exported primary equations and secondary objective agree exactly with the certified point; input data and tolerance are unchanged.",
   "T83_seal_sha256": "627a29d5e3b7a9a057ca90f0a167ec538381e56a3f6dd8ebc34816b54f820155",
   "tolerance": 1e-10,
   "cases": [
@@ -7885,7 +7885,23 @@
           8.98846567431158e+307,
           8.98846567431158e+307
         ]
-      ]
+      ],
+      "secondary_proofs": [
+        {
+          "evaluator": 1,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 2,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 5,
+          "classification": "unbounded"
+        }
+      ],
+      "secondary_unknown_expected": 0,
+      "cost_factor_proof": "Mata-discovered positive factor; original-cost primal-dual/ray proof independently checked; finite original-unit weight export checked."
     },
     {
       "tag": "ray_p1020_vrs_input_benevolent_limzhu",
@@ -8031,7 +8047,23 @@
           8.98846567431158e+307,
           8.98846567431158e+307
         ]
-      ]
+      ],
+      "secondary_proofs": [
+        {
+          "evaluator": 1,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 2,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 5,
+          "classification": "unbounded"
+        }
+      ],
+      "secondary_unknown_expected": 0,
+      "cost_factor_proof": "Same exact input LP as the legacy peer policy; independent original-cost certificate and Lim-Zhu peer ratios checked."
     },
     {
       "tag": "ray_p1020_vrs_input_aggressive_legacy",
@@ -8125,7 +8157,7 @@
         2.0,
         3.0,
         3.0,
-        3.0
+        2.0
       ],
       "recovered": [
         true,
@@ -8177,7 +8209,23 @@
           8.98846567431158e+307,
           8.98846567431158e+307
         ]
-      ]
+      ],
+      "secondary_proofs": [
+        {
+          "evaluator": 1,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 2,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 5,
+          "classification": "optimal"
+        }
+      ],
+      "secondary_unknown_expected": 0,
+      "cost_factor_proof": "Mata-discovered positive factor; original-cost primal-dual/ray proof independently checked; finite original-unit weight export checked."
     },
     {
       "tag": "ray_p1020_vrs_input_aggressive_limzhu",
@@ -8271,7 +8319,7 @@
         2.0,
         3.0,
         3.0,
-        3.0
+        2.0
       ],
       "recovered": [
         true,
@@ -8323,7 +8371,23 @@
           8.98846567431158e+307,
           8.98846567431158e+307
         ]
-      ]
+      ],
+      "secondary_proofs": [
+        {
+          "evaluator": 1,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 2,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 5,
+          "classification": "optimal"
+        }
+      ],
+      "secondary_unknown_expected": 0,
+      "cost_factor_proof": "Same exact input LP as the legacy peer policy; independent original-cost certificate and Lim-Zhu peer ratios checked."
     },
     {
       "tag": "ray_p1020_vrs_output_arbitrary_legacy",
@@ -8544,11 +8608,11 @@
           0.0
         ],
         [
-          8.900295434028806e-308,
+          0.0,
           0.0,
           8.900295434028806e-308,
           0.0,
-          0.0
+          1.0
         ]
       ],
       "self": [
@@ -8563,7 +8627,7 @@
         2.0,
         3.0,
         3.0,
-        3.0
+        2.0
       ],
       "recovered": [
         true,
@@ -8624,9 +8688,14 @@
         {
           "evaluator": 2,
           "classification": "optimal"
+        },
+        {
+          "evaluator": 5,
+          "classification": "optimal"
         }
       ],
-      "secondary_unknown_expected": 1
+      "secondary_unknown_expected": 0,
+      "cost_factor_proof": "Mata-discovered positive factor; original-cost primal-dual/ray proof independently checked; finite original-unit weight export checked."
     },
     {
       "tag": "ray_p1020_vrs_output_aggressive_legacy",
@@ -8720,7 +8789,7 @@
         2.0,
         3.0,
         3.0,
-        3.0
+        2.0
       ],
       "recovered": [
         true,
@@ -8781,9 +8850,14 @@
         {
           "evaluator": 2,
           "classification": "optimal"
+        },
+        {
+          "evaluator": 5,
+          "classification": "optimal"
         }
       ],
-      "secondary_unknown_expected": 1
+      "secondary_unknown_expected": 0,
+      "cost_factor_proof": "Mata-discovered positive factor; original-cost primal-dual/ray proof independently checked; finite original-unit weight export checked."
     },
     {
       "tag": "hetero_p400_crs_input_arbitrary_legacy",

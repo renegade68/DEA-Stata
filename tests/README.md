@@ -1908,3 +1908,27 @@ The version1.10.3 raw-recovery references include four failed-proposal primary
 models certified in original units, while finite-weight normalization obstructions
 remain unavailable. Secondary arithmetic-limit cases retain primary weights.
 New weights are derived from exact certificates and independently rounded.
+
+
+### Exact positive objective factors and command linkage
+
+Version 1.10.4 retains accepted secondary solutions and allows one bounded
+positive-factor attempt after a failed raw secondary integer-width check.
+`crosseff_costunits` checks gcd, exact division, objective copies and boundary
+budgets. `crosseff_costunits_flow` checks certificate units, inherited work and
+pivots, invalid models and helper reloads. `crosseff_costunits_link` checks
+failure eligibility and cumulative public recovery journals. Run them with:
+
+```sh
+python3 -B tests/run.py --suite crosseff_costunits --suite crosseff_costunits_flow --suite crosseff_costunits_link
+```
+
+The raw fixture adds evaluator 5 in four extreme VRS legacy cases: three
+original-cost optima and one feasible-point/improving-ray proof. These are four
+LPs, not four additional datasets. The output-benevolent optimum has zero input
+weights and intercept one; its exported primary equations and secondary
+objective were independently checked in the original units. Other accepted
+weights, source data and tolerances are retained. Recovery path 5 reports the
+extra attempt and includes prior work/pivots. Certificate observation files may
+carry `_original_objective_factor.bin`; the checker restores original dual
+units before testing stationarity against the original exact cost.

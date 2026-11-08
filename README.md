@@ -6,11 +6,18 @@ Python dependencies and Stata discovery. Personal settings and generated test
 results are excluded from the public inventory. [Publication checks](tests/PUBLICATION.txt)
 cover paths, credentials, staged files and commit email metadata.
 
-`dea_crosseff` 1.10.3 adds failure-only certified recovery in original data
+`dea_crosseff` 1.10.4 provides failure-only certified recovery in original data
 units for explicit simplex. Accepted evaluator weights and self scores remain
 unchanged. Recovered rows use directly exported raw weights and bounded exact
 peer arithmetic, including input VRS Lim-Zhu. Unverified primary solutions stay
 unavailable; a failed secondary retains its certified primary weights.
+Version 1.10.4 adds exact cancellation and common-factor division for failed
+raw secondary certificates. It discovers a positive integer objective factor
+in Mata and keeps the original objective units with the certificate. The extra
+attempt shares prior work and pivot limits. Recovery path 5 identifies this
+attempt; its outcome distinguishes a finite optimum, a verified improving ray,
+and an unresolved result. Existing accepted solutions are preserved.
+
 Version 1.10.3 allows one bounded exact primary fit after both numerical
 proposals fail, using a valid lossless representation. Existing accepted weights
 retain their selection. Finite input data can still require original-unit weights
@@ -54,7 +61,7 @@ remain numerical-only; rounding and fallback are reported separately.
 The primary calculation and CRS/VRS peer conventions are unchanged. See
 [objective regression](tests/CROSSEFF_OBJECTIVE.txt).
 
-Install the complete matched 79-file `ado/` directory; see
+Install the complete matched 80-file `ado/` directory; see
 [the cross-efficiency installation guide](INSTALL_CROSSEFF.txt).
 
 Package update (`dea` 2.0.73): the explicit Cooper simplex path now uses
@@ -221,7 +228,7 @@ iteration limit is distinguished from convergence. Aggressive/benevolent
 strategies retain the documented weighted-output surrogates. Their scores are
 not guaranteed to bracket Nash scores. See help for averaging and fallback rules.
 
-`dea_crosseff` 1.10.3 keeps native IPM as the default. Explicit
+`dea_crosseff` 1.10.4 keeps native IPM as the default. Explicit
 `engine(simplex)` obtains the numerical primary formulation, then uses
 original quantities for bounded exact primary/secondary certificates. The
 secondary face uses positive exact primary dual constraints; a rounded

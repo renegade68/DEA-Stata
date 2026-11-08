@@ -1,4 +1,4 @@
-*! version 1.0.1 08nov2026
+*! version 1.0.2 08nov2026
 *! Exact intended peer objective; bounded certificate path; old primary path unchanged.
 version 16.0
 capture mata: mata drop _c70_exact_ready()
@@ -14,7 +14,7 @@ capture mata: mata drop _c70_recover()
 capture mata: mata drop _c70_ray()
 mata:
 mata set matastrict on
-real scalar _c70_exact_ready() return(7002)
+real scalar _c70_exact_ready() return(7003)
 // Decode any finite Stata binary64 operand by exact binary steps. The old
 // coefficient decoder and its supported domain remain unchanged.
 real rowvector _c70_decode(real scalar x,real scalar exponent,struct _C58_Work scalar W)
@@ -180,8 +180,7 @@ struct _C58_Cert scalar _c70b_certify(real rowvector c,real matrix G,
    for(i=1;i<=n;i++) if(i!=k) {
     a=asarray(T,(i,k))
     for(j=1;j<=2*n;j++) if(j!=k) {
-     b=_c58b_mul(pivot,asarray(T,(i,j)),W);v=_c58b_mul(a,asarray(T,(k,j)),W)
-     v=_c58b_div(_c58b_add(b,_c58b_neg(v),W),previous,W);asarray(T,(i,j),v)
+     v=_c58f_update_quotient(pivot,asarray(T,(i,j)),a,asarray(T,(k,j)),previous,W);asarray(T,(i,j),v)
     }
     asarray(T,(i,k),(0,0))
    }

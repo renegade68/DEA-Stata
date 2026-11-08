@@ -3,7 +3,7 @@
 {* Help revision 2026-11-02: validated nonnegative weights and explicit stage diagnostics.}{...}
 {* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 1.10.3 08nov2026}{...}
+{* *! version 1.10.4 08nov2026}{...}
 {viewerjumpto "Related article" "dea_crosseff##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_bootstrap" "help dea_bootstrap"}{...}
@@ -17,7 +17,7 @@
 {viewerjumpto "Stored results" "dea_crosseff##stored_results"}{...}
 {viewerjumpto "References" "dea_crosseff##references"}{...}
 {viewerjumpto "Authors" "dea_crosseff##authors"}{...}
-{pstd}Cross-efficiency 1.10.3 uses native IPM by default. Explicit {cmd:engine(simplex)} adds bounded original-data optimal-face certification, failure-only recovery and stage diagnostics. Install the complete matched {cmd:ado/} directory; see INSTALL_CROSSEFF.txt in the package root. Secondary objectives exclude the evaluator before summation. Simplex certificates use the exact intended peer sums; numerical rounding is diagnosed separately. No acceleration is enabled.{p_end}
+{pstd}Cross-efficiency 1.10.4 uses native IPM by default. Explicit {cmd:engine(simplex)} adds bounded original-data optimal-face certification, failure-only recovery and stage diagnostics. Install the complete matched {cmd:ado/} directory; see INSTALL_CROSSEFF.txt in the package root. Secondary objectives exclude the evaluator before summation. Simplex certificates use the exact intended peer sums; numerical rounding is diagnosed separately. No acceleration is enabled.{p_end}
 
 {title:Title}
 
@@ -634,6 +634,18 @@ An unrepresentable nonzero ratio stays missing. Existing available-peer means
 and ranking rules are unchanged; newly available rows can change those means.
 Recovery does not repair scaling losses in already accepted rows.{p_end}
 
+{pstd}A failed raw secondary certificate with a recorded integer-width refusal may
+make one additional bounded attempt after exact positive common-factor removal
+from its intended objective. Original objective coefficients and their binary
+exponent are retained. The positive factor changes certificate units only;
+primal constraints, maximizing points and improving-ray signs are unchanged.
+The common factor is discovered in Mata with exact integer division, not a
+floating approximation. Existing accepted secondary solutions are retained.
+The extra attempt shares prior work and the 16-exchange limit; it does not
+reset resource limits. A finite certificate is used only after original-unit
+weight conversion and guard checks. An exact unbounded secondary objective
+retains the certified primary weights and the ray diagnostic.{p_end}
+
 {pstd}Simplex returns {cmd:r(raw_recovery_version)}=8401,
 {cmd:r(raw_recovery_scope)}={cmd:failed_primary_only_certified_raw_weights},
 and {cmd:r(raw_peer_scope)}={cmd:recovered_rows_only_exported_weights}.
@@ -755,9 +767,9 @@ article; it does not extend the article's validation claims to later code change
 {title:Recovery path diagnostics}
 {pstd}{cmd:r(primary_recovery_diagnostics)} and {cmd:r(secondary_recovery_diagnostics)} are returned with {cmd:matrix}. Each has one row per selected observation, in the order mapped by {cmd:r(computation_diagnostics)}. The 31 columns are:{p_end}
 {pstd}{cmd:requested outcome path stop initial_status initial_reason original_steps eq_attempted eq_steps aux_attempted aux_steps final_steps total_steps ray_verified initial_ops ray_ops eq_ops aux_ops final_ops total_ops maxlimbs returned_stop eq_status eq_reason eq_stop aux_status aux_reason aux_stop final_status final_reason final_stop}.{p_end}
-{pstd}Requested means a failed initial certificate entered the recovery dispatcher, including a skipped request. Outcome is 0 when recovery was not requested, 1 for a recovered finite optimum, 2 for an exact feasible-point/ray proof, 3 for an unresolved bounded recovery, and -1 for an excluded request. Path 1 is equality-first recovery, 2 is auxiliary feasibility followed by the original objective, 4 is post-failure ray inspection, and 0 is no successful recovery path. Stop 0 means recovery/proof returned, 1 means eligibility or prior resource exclusion, 2 means no verified recovery, and 3 means unsupported canonical form. These process codes do not establish infeasibility.{p_end}
+{pstd}Requested means a failed initial certificate entered the recovery dispatcher, including a skipped request. Outcome is 0 when recovery was not requested, 1 for a recovered finite optimum, 2 for an exact feasible-point/ray proof, 3 for an unresolved bounded recovery, and -1 for an excluded request. Path 1 is equality-first recovery, 2 is auxiliary feasibility followed by the original objective, 4 is post-failure ray inspection, 5 is the bounded positive-objective-factor attempt, and 0 is no successful recovery path. Path 5 can end in a finite optimum, an exact ray or an unresolved result; inspect outcome as well. Stop 0 means recovery/proof returned, 1 means eligibility or prior resource exclusion, 2 means no verified recovery, and 3 means unsupported canonical form. These process codes do not establish infeasibility.{p_end}
 {pstd}Stage status/reason and stop use the certificate/repair codes above. Missing stage status means that stage was not evaluated; a rank-selection failure may have status -1 and reason 2 before any repair. Returned_stop describes the retained certificate. The eq/aux/final stop columns describe the actual stage, even when its trial was not retained.{p_end}
-{pstd}Total_steps equals original_steps+eq_steps+aux_steps+final_steps and never exceeds the configured 16 exchanges. Total_ops equals initial_ops+ray_ops+eq_ops+aux_ops+final_ops. Ray inspection has no pivots and runs only after an unsuccessful bounded recovery path; all work shares the existing 80-million operation allowance. Individual checks retain the 10-million operation and 128-limb settings. The counter can include the last rejected integer operation.{p_end}
+{pstd}Total_steps equals original_steps+eq_steps+aux_steps+final_steps and never exceeds the configured 16 exchanges. Total_ops equals initial_ops+ray_ops+eq_ops+aux_ops+final_ops. Ray inspection has no pivots and runs only after an unsuccessful bounded recovery path; all work shares the existing 80-million operation allowance. Individual checks retain the 10-million operation and 128-limb settings. The counter can include the last rejected integer operation. Path 5 accumulates earlier and new work and exchanges. Initial_status, initial_reason, original_steps and initial_ops retain the first attempt. New factor discovery and its first certificate/repair are included in final_steps/final_ops; eq/aux/final status fields describe the latest reached check. Maxlimbs includes rejected widths from earlier attempts, so it can exceed 128 even when the eventual certificate stays within the configured limit.{p_end}
 {pstd}Without {cmd:matrix}, summary scalars are still returned: {cmd:r(n_recovery_requested)}, {cmd:r(n_recovery_finite)}, {cmd:r(n_recovery_unknown)}, {cmd:r(n_recovery_skipped)}, {cmd:r(n_recovery_equality)}, {cmd:r(n_recovery_auxiliary)}, {cmd:r(n_exact_unbounded)}, {cmd:r(recovery_integer_ops)}, {cmd:r(recovery_steps)}, and {cmd:r(certificate_integer_ops)}. Counts include both stages; operation counts cover certificate, recovery and ray integer arithmetic; they exclude the numerical LP, ordinary matrix work and final binary64 export, and do not measure elapsed time. {cmd:detail} prints observation/stage path summaries.{p_end}
 {pstd}The diagnostic version is 6201. Native calls return zero work/counters and scope {cmd:not_evaluated_native}; they do not load the simplex/certificate engine unless optimadiag or cerange is requested. Unattempted or dimension-excluded rows remain explicit. No infeasibility conclusion is inferred from a failed numerical primary or from a bad proposed basis.{p_end}
 
