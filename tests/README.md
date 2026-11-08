@@ -1903,3 +1903,8 @@ exact references, including limit-only/unbounded/undefined/unavailable states,
 summary counts and unchanged native/optima outputs. See
 [CROSSEFF_CERANGE.txt](CROSSEFF_CERANGE.txt). Run with `--stata` and a new
 `--output` directory; optional `--baseline-ado` compares a complete older package.
+
+The version1.10.3 raw-recovery references include four failed-proposal primary
+models certified in original units, while finite-weight normalization obstructions
+remain unavailable. Secondary arithmetic-limit cases retain primary weights.
+New weights are derived from exact certificates and independently rounded.

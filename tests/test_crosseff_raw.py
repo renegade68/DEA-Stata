@@ -25,7 +25,7 @@ def main():
   code+=f'dea_crosseff x1 x2=y1 y2,dmu(id) eng(simplex) rts({z["rts"]}) ori({z["orientation"]}) method({z["method"]}) vrscross({z["rule"]}) tol({tol}) gen(res) matrix\nassert r(raw_recovery_version)==8401\n'
   if 'secondary_proofs' in z:
    unbounded=sum(q['classification']=='unbounded' for q in z['secondary_proofs'])
-   code+=f'assert r(n_raw_secondary_unknown)==0\nassert r(n_raw_secondary_unbounded)=={unbounded}\nassert r(n_exact_unbounded)=={unbounded}\n'
+   code+=f'assert r(n_raw_secondary_unknown)=={z.get("secondary_unknown_expected",0)}\nassert r(n_raw_secondary_unbounded)=={unbounded}\nassert r(n_exact_unbounded)=={unbounded}\n'
   for k in ['ce_matrix','weights_input','weights_output','intercept','stage_status','peer_count','raw_recovery_diagnostics','raw_peer_status']:
    code+=f'mata: savebin("{d/k}.bin",st_matrix("r({k})"))\n'
   code+=f'mata: savebin("{d}/data.bin",st_data(.,tokens("id x1 x2 y1 y2 res res_self res_maverick")))\n'
@@ -47,6 +47,10 @@ def main():
    i=q['evaluator']-1;finite=q['classification']=='optimal'
    assert RD[i,6]==1 and RD[i,7]==(1 if finite else -1)
    assert RD[i,10]==(2 if finite else 3) and RD[i,11]==(2 if finite else 4)
+  for evaluator in z.get('normalization_obstructed_evaluators',[]):
+   i=evaluator-1
+   assert RD[i,4]==1 and RD[i,6]==0 and RD[i,11]==8 and RD[i,17]==1
+   assert data[i,6]==MISS and np.all(W[i]==MISS)
   for i,recovered in enumerate(z['recovered']):
    assert RD[i,6]==recovered and RD[i,1]==(z['initial_stage'][i]==0)
    if not recovered:

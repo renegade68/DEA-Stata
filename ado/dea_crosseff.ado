@@ -1,4 +1,4 @@
-*! version 1.10.2 08nov2026
+*! version 1.10.3 08nov2026
 *! Peer-only objectives, exact intended-sum certification and build diagnostics.
 *! Cross-efficiency: native IPM default and bounded explicit simplex certificates.
 *! 2026-11-02: explicit input VRS Lim-Zhu peer formula; preserve legacy default.
@@ -276,12 +276,12 @@ program define dea_crosseff, rclass
                 quietly run "`r(fn)'"
             }
             mata: assert(_c70_exact_ready()==7002 & findexternal("_c70_build()")!=NULL & findexternal("_c70_fit()")!=NULL & findexternal("_c70_value()")!=NULL & findexternal("_c70_decode()")!=NULL & findexternal("_c70b_certify()")!=NULL & findexternal("_c70b_solve()")!=NULL & findexternal("_c70u_update()")!=NULL & findexternal("_c70r_repair()")!=NULL & findexternal("_c70_recover()")!=NULL & findexternal("_c70_ray()")!=NULL)
-            capture mata: assert(_c84_ready()==8402 & findexternal("_c84_work()")!=NULL & findexternal("_c84_log()")!=NULL & findexternal("_c84_scale()")!=NULL & findexternal("_c84_coefficient()")!=NULL & findexternal("_c84_build()")!=NULL & findexternal("_c84_dyad()")!=NULL & findexternal("_c84_number()")!=NULL & findexternal("_c84_abs()")!=NULL & findexternal("_c84_sub()")!=NULL & findexternal("_c84_div()")!=NULL & findexternal("_c84_gt()")!=NULL & findexternal("_c84_value()")!=NULL & findexternal("_c84_dot()")!=NULL & findexternal("_c84_objective()")!=NULL & findexternal("_c84_point()")!=NULL & findexternal("_c84_guard()")!=NULL & findexternal("_c84_ready()")!=NULL & findexternal("_c84_mul()")!=NULL & findexternal("_c84_peer()")!=NULL & findexternal("_c84_multiplier()")!=NULL & findexternal("_C84_Model()")!=NULL & findexternal("_C84_Q()")!=NULL)
+            capture mata: assert(_c84_ready()==8403 & findexternal("_c84_work()")!=NULL & findexternal("_c84_log()")!=NULL & findexternal("_c84_scale()")!=NULL & findexternal("_c84_coefficient()")!=NULL & findexternal("_c84_build()")!=NULL & findexternal("_c84_dyad()")!=NULL & findexternal("_c84_number()")!=NULL & findexternal("_c84_abs()")!=NULL & findexternal("_c84_sub()")!=NULL & findexternal("_c84_div()")!=NULL & findexternal("_c84_gt()")!=NULL & findexternal("_c84_value()")!=NULL & findexternal("_c84_dot()")!=NULL & findexternal("_c84_objective()")!=NULL & findexternal("_c84_point()")!=NULL & findexternal("_c84_guard()")!=NULL & findexternal("_c84_ready()")!=NULL & findexternal("_c84_mul()")!=NULL & findexternal("_c84_peer()")!=NULL & findexternal("_c84_multiplier()")!=NULL & findexternal("_C84_Model()")!=NULL & findexternal("_C84_Q()")!=NULL)
             if _rc | `reload_exact' {
                 quietly findfile _dea_crosseff_raw.ado
                 quietly run "`r(fn)'"
             }
-            mata: assert(_c84_ready()==8402 & findexternal("_c84_work()")!=NULL & findexternal("_c84_log()")!=NULL & findexternal("_c84_scale()")!=NULL & findexternal("_c84_coefficient()")!=NULL & findexternal("_c84_build()")!=NULL & findexternal("_c84_dyad()")!=NULL & findexternal("_c84_number()")!=NULL & findexternal("_c84_abs()")!=NULL & findexternal("_c84_sub()")!=NULL & findexternal("_c84_div()")!=NULL & findexternal("_c84_gt()")!=NULL & findexternal("_c84_value()")!=NULL & findexternal("_c84_dot()")!=NULL & findexternal("_c84_objective()")!=NULL & findexternal("_c84_point()")!=NULL & findexternal("_c84_guard()")!=NULL & findexternal("_c84_ready()")!=NULL & findexternal("_c84_mul()")!=NULL & findexternal("_c84_peer()")!=NULL & findexternal("_c84_multiplier()")!=NULL & findexternal("_C84_Model()")!=NULL & findexternal("_C84_Q()")!=NULL)
+            mata: assert(_c84_ready()==8403 & findexternal("_c84_work()")!=NULL & findexternal("_c84_log()")!=NULL & findexternal("_c84_scale()")!=NULL & findexternal("_c84_coefficient()")!=NULL & findexternal("_c84_build()")!=NULL & findexternal("_c84_dyad()")!=NULL & findexternal("_c84_number()")!=NULL & findexternal("_c84_abs()")!=NULL & findexternal("_c84_sub()")!=NULL & findexternal("_c84_div()")!=NULL & findexternal("_c84_gt()")!=NULL & findexternal("_c84_value()")!=NULL & findexternal("_c84_dot()")!=NULL & findexternal("_c84_objective()")!=NULL & findexternal("_c84_point()")!=NULL & findexternal("_c84_guard()")!=NULL & findexternal("_c84_ready()")!=NULL & findexternal("_c84_mul()")!=NULL & findexternal("_c84_peer()")!=NULL & findexternal("_c84_multiplier()")!=NULL & findexternal("_C84_Model()")!=NULL & findexternal("_C84_Q()")!=NULL)
             capture mata: assert(_c57_simplex_ready()==8402 & findexternal("_c57_multiplier()")!=NULL & findexternal("_c58_multiplier()")!=NULL & findexternal("_c57_compute()")!=NULL)
             if _rc {
                 quietly findfile _dea_crosseff_simplex.ado
@@ -478,6 +478,7 @@ program define dea_crosseff, rclass
 
     if `raw_recovered'>0 di as text "Note: " `raw_recovered' " primary solve(s) recovered with certified original-unit weights."
     if `raw_unavailable'>0 di as text "Note: " `raw_unavailable' " raw recovery attempt(s) remain unavailable; this is not an original-model infeasibility claim."
+    if `raw_export_obstructed'>0 di as text "Note: " `raw_export_obstructed' " raw recovery attempt(s) encountered weights that could not be represented in Stata; this alone does not establish model infeasibility."
     if `raw_secondary_unknown'>0 di as error "Warning: " `raw_secondary_unknown' " raw secondary solve(s) remain unverified or unexportable; certified primary weights retained."
     if `raw_peers_range'>0 di as error "Warning: " `raw_peers_range' " raw peer ratio(s), including diagonal, cannot be represented without range loss."
     if `raw_peers_arithmetic'>0 di as error "Warning: " `raw_peers_arithmetic' " raw peer ratio(s), including diagonal, exceeded the arithmetic budget."

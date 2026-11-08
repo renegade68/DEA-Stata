@@ -1,4 +1,4 @@
-Cross-efficiency 1.10.2 matched-package installation and verification
+Cross-efficiency 1.10.3 matched-package installation and verification
 
 Install all 79 files in ado/ together. Nine cross-efficiency helpers are required:
 _dea_crosseff_context.ado, _dea_crosseff_simplex.ado, _dea_crosseff_raw.ado,
@@ -6,7 +6,7 @@ _dea_crosseff_cert.ado, _dea_crosseff_diagnostics.ado,
 _dea_crosseff_objective.ado, _dea_crosseff_exactobjective.ado and
 _dea_crosseff_optima.ado, and _dea_crosseff_cerange.ado.
 Context, objective and CE-range helpers are 1.0.0; certificate is 1.0.2;
-exactobjective and raw recovery are 1.0.1; simplex is 1.3.1;
+exactobjective is 1.0.1; raw recovery is 1.1.0; simplex is 1.3.1;
 diagnostics and optima are 1.1.0.
 The complete inventory is in INSTALL_COOPER.txt. This package uses local-folder
 installation and does not provide net-install metadata.
@@ -26,7 +26,7 @@ Put the complete directory first on adopath:
     findfile _dea_crosseff_cerange.ado
     findfile dea_crosseff.sthlp
 Internal compatibility readiness: context 57; base certificate 6203;
-diagnostics/objective 7001; exactobjective 7002; simplex/raw recovery 8402;
+diagnostics/objective 7001; exactobjective 7002; simplex 8402; raw recovery 8403;
 optima core 7301;
 CE core 7601; optima and CE adapters 7701. These are ABI checks, not
 version labels or iteration settings. Public diagnostic schemas remain
@@ -225,3 +225,15 @@ Use the complete matched ado directory when upgrading, including the main loader
 Run python -B tests/run.py --suite crosseff_dyadic --suite crosseff_raw.
 The arithmetic suite generates synthetic integers locally and requires no private
 data, Git history, captured logs or user-specific directory edits.
+
+Failed numerical proposals (1.10.3)
+After both numerical proposals fail, a valid lossless representation can enter
+one bounded exact primary fit. Existing accepted proposals retain their path.
+No extra exact-fit retry budget is granted. Unknown secondary results retain
+certified primary weights and their warning.
+
+Finite positive inputs can require normalized original-unit weights outside
+Stata's finite range. Such weights stay unavailable; this does not establish
+mathematical infeasibility. The obstruction flag records a failed conversion,
+not a proof about every alternative optimum. Mantissa/exponent or scaled-weight
+returns require a separate output contract and are not enabled by this update.

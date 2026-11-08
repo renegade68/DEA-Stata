@@ -1,4 +1,4 @@
-*! version 1.0.1 08nov2026
+*! version 1.1.0 08nov2026
 *! Failure-only certified original-unit weights and bounded exact peer arithmetic.
 version 16.0
 capture mata: mata drop _c84_work()
@@ -238,7 +238,7 @@ real rowvector _c84_guard(struct _C84_Model scalar A,real rowvector x,
  gap=_c84_value(r);if(_c84_gt(r,qt,W)) ok=0
  return((ok & bounds & !W.error,eq,iq,gap,bounds,W.error,W.ops,W.maxlimbs))
 }
-real scalar _c84_ready() return(8402)
+real scalar _c84_ready() return(8403)
 struct _C84_Q scalar _c84_mul(struct _C84_Q scalar a,struct _C84_Q scalar b,struct _C58_Work scalar W)
 {
  struct _C84_Q scalar q
@@ -283,7 +283,7 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
  real rowvector pd,real rowvector sd,real rowvector pt,real rowvector st,
  real rowvector link,real rowvector od)
 {
- struct _C84_Model scalar A
+ struct _C84_Model scalar A,last_valid
  struct _C58_Cert scalar p,s
  struct _C58_Work scalar W
  struct _C84_Q scalar opt
@@ -291,7 +291,7 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
  real rowvector sol,diag,g,ed,c2,trial,check
  real matrix G,G2,F,Traw
  real colvector h,h2,fb
- real scalar attempt,rc,obj,ops,j,ce,d,decoder_extended
+ real scalar attempt,rc,obj,ops,j,ce,d,decoder_extended,chosen,last_rep
  real colvector decoder_values
  d=cols(X)+cols(Y)+free;x=J(1,d,.);score=.;stage=0
  rd=(1,0,0,.,.,0,.,.,0,0,6,.,.,.,0,0,0)
@@ -299,10 +299,11 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
  pd=sd=(0,.,.,.,.,.,.,.,.);pt=st=_c62_empty_trace()
  link=(0,.,0,0,.,.,.,.,.,.);od=J(1,6,0)
  if(rows(X)>32 | d+free>16) {rd[11]=10;return;}
- scaling=J(1,d+rows(X)+2,.)
+ scaling=J(1,d+rows(X)+2,.);chosen=0;last_rep=0
  for(attempt=1;attempt<=2;attempt++) {
   A=_c84_build(X,Y,index,free,out,attempt);rd[2]=rd[2]+1;rd[15]=rd[15]+A.ops
   if(!A.ok) {rd[11]=5;continue;}
+  last_valid=A;last_rep=attempt
   rc=_c57_solve(A.qc,A.qE,A.qb,A.qU,A.qub,A.lo,A.hi,tol,sol,obj,diag)
   if(rc!=0 | hasmissing(sol)) {rd[11]=6;continue;}
   trial=sol;ops=0
@@ -313,32 +314,41 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
   if(hasmissing(trial)) {rd[11]=8;rd[17]=1;continue;}
   W=_c84_work();opt=_c84_dot(A.c,trial,0,W);g=_c84_guard(A,trial,opt,tol)
   if(!g[1] | W.error) {rd[11]=9;continue;}
-  rd[3]=attempt;scaling=(A.oe,A.ve,A.re)
+  chosen=attempt;break
+ }
+ // Existing successful proposals keep their representation and selected path.
+ // After both proposals fail, certify the last valid exact representation once.
+ // No numerical point, known score, or data-dependent special case is required.
+ if(!chosen) {
+  if(!last_rep) return
+  A=last_valid;chosen=last_rep
+ }
+ rd[3]=chosen;scaling=(A.oe,A.ve,A.re)
   _c58_fit(A.qc*A.S,A.qE*A.S,A.qb,A.qU*A.S,A.qub,tol,p,G,h,1)
   rd[4..5]=(p.status,p.reason);pd=_c60_certdiag(p,1);pt=p.trace62
   link[1]=p.status;link[5]=p.ops;link[7]=p.solver_status;link[9]=p.reason
-  if(p.status!=1) {rd[11]=7;break;}
+  if(p.status!=1) {rd[11]=7;return;}
   // Broader secondary decoding only when this primary model was outside the
   // old coefficient domain. Existing recovered primary/secondary rows keep it.
   decoder_values=abs(vec(G)\h\(A.qc*A.S)')
   decoder_extended=any((decoder_values:>0):&(decoder_values:<1.1830521861667747e-271)) | any(decoder_values:>8.452712498170644e270)
 
   trial=_c84_point(A.ve,free,p,ed);rd[16]=rd[16]+ed[3]
-  if(!ed[1]) {rd[11]=8;rd[17]=1;break;}
+  if(!ed[1]) {rd[11]=8;rd[17]=1;return;}
   W=_c84_work();opt=_c84_objective(A,p,W)
   // Convert the reciprocal directly for output orientation.
   obj=_c84_value(out ? _c84_div(_c84_number(1,W),opt,W) : opt)
   score=(out ? obj : -obj);g=_c84_guard(A,trial,opt,tol);rd[12..14]=g[2..4]
-  if(!g[1] | W.error | missing(score) | score<=0) {rd[11]=9;score=.;break;}
+  if(!g[1] | W.error | missing(score) | score<=0) {rd[11]=9;score=.;return;}
   x=trial;rd[6]=1;stage=1;rd[10]=1;rd[11]=1;link[4]=4
   if(method!="arbitrary") {
    stage=3;rd[10]=3;rd[11]=3;F=A.qE*A.S;fb=A.qb
    if(rows(p.face)) {F=F\G[p.face,.];fb=fb\h[p.face];}
    link[10]=rows(p.face);Traw=A.S;ops=0
    for(j=1;j<=rows(Traw);j++) Traw[j,.]=Traw[j,.]*_c84_scale(1,A.ve[j],ops)
-   if(hasmissing(Traw)) {rd[11]=12;break;}
+   if(hasmissing(Traw)) {rd[11]=12;return;}
    _c70_build(X,Y,index,out,method=="aggressive",Traw,c2,exactC,ce,od)
-   if(od[2]!=1) {rd[11]=12;break;}
+   if(od[2]!=1) {rd[11]=12;return;}
    _c70_fit(c2,F,fb,A.qU*A.S,A.qub,tol,exactC,ce,od,s,G2,h2,decoder_extended)
    rd[7..8]=(s.status,s.reason);sd=_c60_certdiag(s,rows(F));st=s.trace62
    link[2]=s.status;link[6]=s.ops;link[8]=s.solver_status
@@ -353,8 +363,6 @@ void _c84_multiplier(real matrix X,real matrix Y,real scalar index,real scalar f
     else {rd[11]=11;link[4]=5;}
    }
   }
-  break
- }
 }
 
 end

@@ -3,7 +3,7 @@
 {* Help revision 2026-11-02: validated nonnegative weights and explicit stage diagnostics.}{...}
 {* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 1.10.2 08nov2026}{...}
+{* *! version 1.10.3 08nov2026}{...}
 {viewerjumpto "Related article" "dea_crosseff##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_bootstrap" "help dea_bootstrap"}{...}
@@ -17,7 +17,7 @@
 {viewerjumpto "Stored results" "dea_crosseff##stored_results"}{...}
 {viewerjumpto "References" "dea_crosseff##references"}{...}
 {viewerjumpto "Authors" "dea_crosseff##authors"}{...}
-{pstd}Cross-efficiency 1.10.2 uses native IPM by default. Explicit {cmd:engine(simplex)} adds bounded original-data optimal-face certification, failure-only recovery and stage diagnostics. Install the complete matched {cmd:ado/} directory; see INSTALL_CROSSEFF.txt in the package root. Secondary objectives exclude the evaluator before summation. Simplex certificates use the exact intended peer sums; numerical rounding is diagnosed separately. No acceleration is enabled.{p_end}
+{pstd}Cross-efficiency 1.10.3 uses native IPM by default. Explicit {cmd:engine(simplex)} adds bounded original-data optimal-face certification, failure-only recovery and stage diagnostics. Install the complete matched {cmd:ado/} directory; see INSTALL_CROSSEFF.txt in the package root. Secondary objectives exclude the evaluator before summation. Simplex certificates use the exact intended peer sums; numerical rounding is diagnosed separately. No acceleration is enabled.{p_end}
 
 {title:Title}
 
@@ -576,13 +576,27 @@ The default native IPM engine is unchanged. Recovery is restricted to
 32 selected observations and 16 variables after free-variable splitting.{p_end}
 
 {pstd}At most two exact dyadic representations propose a feasible point.
-One bounded exact primary fit then establishes optimality; a merely feasible
-numerical point is insufficient. Coefficients must round-trip without loss.
+Version 1.10.3 preserves an accepted proposal. If neither proposal is accepted,
+it selects the last valid lossless representation (column-centred when valid)
+and attempts the same bounded exact primary fit once. Numerical solver failure
+does not by itself prevent an exact certificate. There is at most one exact
+primary fit per evaluator; no fresh budget is granted to try another representation.
+A merely feasible numerical point is insufficient. Coefficients must round-trip without loss.
 The requested tolerance and engine are unchanged. Certified fractions are
 converted directly to original-unit weights, combining the free-variable
 split before rounding. Normalization, term-relative inequalities, bounds and
 objective are checked again in original units. Unexportable weights leave the
 primary unavailable; the command does not publish a score without weights.{p_end}
+
+{pstd}Finite positive data do not guarantee representable original-unit
+weights. A mathematically finite normalized weight may exceed Stata's finite
+double range or a nonzero weight may round to zero. When no representable weights
+can satisfy normalization, extra iterations or tolerance changes cannot restore
+the current original-unit output. This is a representation limit, not proof that
+the mathematical LP is infeasible. The export-obstruction count records failed
+proposals or certified-point conversions; by itself it does not prove that every
+alternative optimum is unexportable. Alternative units or scaled-weight returns
+require separate validation and are not substituted automatically.{p_end}
 
 {pstd}Version 1.10.1 can decode finite original-data coefficients outside
 the earlier 2^-900 to 2^900 absolute range in this failure-only primary path,
@@ -636,12 +650,12 @@ including the diagonal. These returns are absent with native IPM.{p_end}
 Representation1 is evaluator-centred and2 is column-centred. Zero means
 no selected representation. Exact statuses/reasons use the existing certificate
 convention. Export flags mean both finite conversion and raw guard acceptance.
-The obstruction flag records any numeric proposal with a nonrepresentable raw
-weight, even when a later attempt has another final stop.{p_end}
+The obstruction flag records a numeric proposal or certified point with a
+nonrepresentable raw weight, even when a later attempt has another final stop.{p_end}
 
 {pstd}Stop0 means not attempted;1 primary recovered;2 secondary recovered;
 3 secondary unknown with primary fallback;4 exact secondary improving ray;
-5 coefficient construction rejected;6 no eligible numeric proposal;
+5 coefficient construction rejected;6 no eligible proposal or representation;
 7 primary certificate unknown;8 raw export unavailable;9 raw guard rejected;
 10 dimension limit;11 secondary export/guard rejected with primary fallback;
 12 secondary objective/map unavailable with primary fallback.
