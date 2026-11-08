@@ -3,7 +3,7 @@
 {* Help revision 2026-11-02: validated nonnegative weights and explicit stage diagnostics.}{...}
 {* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 1.10.1 08nov2026}{...}
+{* *! version 1.10.2 08nov2026}{...}
 {viewerjumpto "Related article" "dea_crosseff##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_bootstrap" "help dea_bootstrap"}{...}
@@ -17,7 +17,7 @@
 {viewerjumpto "Stored results" "dea_crosseff##stored_results"}{...}
 {viewerjumpto "References" "dea_crosseff##references"}{...}
 {viewerjumpto "Authors" "dea_crosseff##authors"}{...}
-{pstd}Cross-efficiency 1.10.1 uses native IPM by default. Explicit {cmd:engine(simplex)} adds bounded original-data optimal-face certification, failure-only recovery and stage diagnostics. Install the complete matched {cmd:ado/} directory; see INSTALL_CROSSEFF.txt in the package root. Secondary objectives exclude the evaluator before summation. Simplex certificates use the exact intended peer sums; numerical rounding is diagnosed separately. No acceleration is enabled.{p_end}
+{pstd}Cross-efficiency 1.10.2 uses native IPM by default. Explicit {cmd:engine(simplex)} adds bounded original-data optimal-face certification, failure-only recovery and stage diagnostics. Install the complete matched {cmd:ado/} directory; see INSTALL_CROSSEFF.txt in the package root. Secondary objectives exclude the evaluator before summation. Simplex certificates use the exact intended peer sums; numerical rounding is diagnosed separately. No acceleration is enabled.{p_end}
 
 {title:Title}
 
@@ -592,6 +592,16 @@ the default coefficient domain of other certificate/diagnostic paths are
 preserved. Arithmetic limits are unchanged: a broader coefficient domain does
 not guarantee a certificate or a representable result. Such attempts retain
 the existing unknown/fallback states and warnings.{p_end}
+
+{pstd}Version 1.10.2 factors common powers of two before selected exact
+products, differences, quotients, and residual checks that would otherwise exceed
+the arithmetic width limit. Integer quotients and restored values are checked
+exactly; this does not change the data, tolerance, pivot tie rules, or the
+128-limb and work limits. The bounded checks can certify additional secondary
+optima or improving rays. An exactly unbounded secondary has no finite optimum:
+the certified primary weights are retained and the exact-ray note is displayed.
+Other resource-limited attempts remain unknown and retain their warnings.
+This is not a guarantee for every numerical scale or problem dimension.{p_end}
 
 {pstd}A requested secondary uses the primary's exact dual-defined optimal
 face, not a rounded self equality. Existing certificate budgets and the

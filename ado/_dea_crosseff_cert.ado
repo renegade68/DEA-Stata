@@ -1,6 +1,16 @@
-*! version 1.0.1 08nov2026
+*! version 1.0.2 08nov2026
 *! Bounded exact cross-efficiency certificates, recovery and terminal ray checks.
 version 16.0
+capture mata: mata drop _c58f_residual_sign()
+capture mata: mata drop _c58f_quotient()
+capture mata: mata drop _c58f_update_quotient()
+capture mata: mata drop _c58f_restore()
+capture mata: mata drop _c58f_rowcol()
+capture mata: mata drop _c58f_split()
+capture mata: mata drop _c58f_wide_product()
+capture mata: mata drop _c58f_ratio()
+capture mata: mata drop _c58f_identity_needs()
+capture mata: mata drop _c58f_identity_cell()
 capture mata: mata drop _c58_value()
 capture mata: mata drop _c58_point()
 capture mata: mata drop _c58_fit()
@@ -445,6 +455,166 @@ struct _C58_Cert scalar _c58b_solve(real rowvector c,real matrix E,real colvecto
 // integer inverse J/Db. Every new inverse is checked against the full new B.
 // q=a*J, s=q[k], Db_new=abs(s),
 // J_new=sign(s)*(s*J-J[,k]*q+Db*J[,k]*e_k')/Db.
+// Exact dyadic factoring on otherwise over-width checks.
+real rowvector _c58f_split(real rowvector a0,real scalar exponent,struct _C58_Work scalar W) {
+ real rowvector a,out
+ real scalar q,k,f,i,v,carry,n
+ a=_c58b_norm(a0);exponent=0
+ if(W.error | a[1]==0) return(a)
+ if(!_c58b_tick(W,2*(cols(a)-1)+26,cols(a)-1)) return((0,0))
+ q=0
+ while(a[q+2]==0) q=q+1
+ k=0;v=a[q+2]
+ while(mod(v,2)==0) {v=v/2;k=k+1;}
+ exponent=26*q+k;a=(a[1],a[q+2..cols(a)]);n=cols(a)
+ if(k==0) return(a)
+ f=1
+ for(i=1;i<=k;i++) f=f*2
+ out=J(1,n,0);out[1]=a[1];carry=0
+ for(i=n;i>=2;i--) {
+  v=a[i]+carry*67108864;out[i]=floor(v/f);carry=v-out[i]*f
+ }
+ if(carry!=0) {W.error=3;return((0,0));}
+ return(_c58b_norm(out))
+}
+real scalar _c58f_wide_product(real rowvector a,real rowvector b,struct _C58_Work scalar W) {
+ if(a[1]==0 | b[1]==0) return(0)
+ if((cols(a)==2 & a[2]==1) | (cols(b)==2 & b[2]==1)) return(0)
+ return(cols(a)+cols(b)-2>W.limbs)
+}
+real scalar _c58f_ratio(real rowvector a,real rowvector b,real rowvector c,real rowvector d,struct _C58_Work scalar W) {
+ real rowvector aa,bb,cc,dd,x,y
+ real scalar ea,eb,ec,ed,ex,ey,bx,by,emin
+ aa=_c58f_split(a,ea,W);bb=_c58f_split(b,eb,W);cc=_c58f_split(c,ec,W);dd=_c58f_split(d,ed,W)
+ x=_c58b_mul(aa,dd,W);y=_c58b_mul(cc,bb,W)
+ if(W.error) return(0)
+ if(x[1]==0 | y[1]==0) return((x[1]!=0)-(y[1]!=0))
+ ex=ea+ed;ey=ec+eb;bx=_c58d_bits(x)+ex;by=_c58d_bits(y)+ey
+ if(!_c58b_tick(W,cols(x)+cols(y),max((cols(x),cols(y)))-1)) return(0)
+ if(bx!=by) return(sign(bx-by))
+ emin=min((ex,ey));x=_c58b_shift(x,ex-emin,W);y=_c58b_shift(y,ey-emin,W)
+ return(W.error ? 0 : _c58b_cmp(x,y))
+}
+real scalar _c58f_identity_needs(transmorphic scalar A,transmorphic scalar V,real colvector ids,real scalar i,real scalar j,real scalar n,struct _C58_Work scalar W) {
+ real scalar k
+ for(k=1;k<=n;k++) if(_c58f_wide_product(asarray(A,(ids[i],k)),asarray(V,(k,j)),W)) return(1)
+ return(0)
+}
+real rowvector _c58f_identity_cell(transmorphic scalar A,transmorphic scalar V,real colvector ids,real rowvector den,real scalar i,real scalar j,real scalar n,struct _C58_Work scalar W) {
+ transmorphic scalar X,Y
+ real rowvector a,b,v,ex
+ real scalar k,ea,eb,emin
+ X=asarray_create("real",1);Y=asarray_create("real",1);ex=J(1,n+1,0);emin=.
+ for(k=1;k<=n+1;k++) {
+  if(k<=n) {a=asarray(A,(ids[i],k));b=asarray(V,(k,j));}
+  else {a=(i==j ? _c58b_neg(den) : (0,0));b=(1,1);}
+  a=_c58f_split(a,ea,W);b=_c58f_split(b,eb,W);ex[k]=ea+eb
+  asarray(X,k,a);asarray(Y,k,b)
+  if(a[1]!=0 & b[1]!=0) emin=min((emin,ex[k]))
+ }
+ if(emin>=.) return((0,0))
+ v=(0,0)
+ for(k=1;k<=n+1;k++) {
+  a=asarray(X,k);b=asarray(Y,k)
+  if(a[1]!=0 & b[1]!=0) {
+   a=_c58b_mul(a,b,W);a=_c58b_shift(a,ex[k]-emin,W);v=_c58b_add(v,a,W)
+  }
+ }
+ return(v)
+}
+// Preserve the full integer value after exact dot-product factoring.
+real rowvector _c58f_restore(real rowvector a0,real scalar exponent,struct _C58_Work scalar W) {
+ real rowvector a,out
+ real scalar n,q,k,f,j,v,carry
+ a=_c58b_norm(a0)
+ if(W.error) return((0,0))
+ if(exponent<0 | exponent>=. | exponent!=floor(exponent)) {W.error=4;return((0,0));}
+ if(a[1]==0) return(a)
+ n=ceil((_c58d_bits(a)+exponent)/26)
+ if(!_c58b_tick(W,cols(a)+n,n)) return((0,0))
+ q=floor(exponent/26);k=mod(exponent,26);f=1
+ for(j=1;j<=k;j++) f=f*2
+ out=J(1,n+1,0);out[1]=a[1];carry=0
+ for(j=2;j<=cols(a);j++) {
+  v=a[j]*f+carry;carry=floor(v/67108864);out[j+q]=v-carry*67108864
+ }
+ if(carry) out[cols(a)+q+1]=carry
+ return(_c58b_norm(out))
+}
+real rowvector _c58f_rowcol(transmorphic scalar A,real scalar i,
+ transmorphic scalar V,real scalar k,real scalar n,struct _C58_Work scalar W) {
+ transmorphic scalar X,Y
+ real rowvector a,b,q,ex
+ real scalar j,ea,eb,emin
+ if(W.error) return((0,0))
+ X=asarray_create("real",1);Y=asarray_create("real",1);ex=J(1,n,0);emin=.
+ for(j=1;j<=n;j++) {
+  a=_c58f_split(asarray(A,(i,j)),ea,W);b=_c58f_split(asarray(V,(j,k)),eb,W)
+  if(W.error) return((0,0))
+  asarray(X,j,a);asarray(Y,j,b);ex[j]=ea+eb
+  if(a[1]!=0 & b[1]!=0) emin=min((emin,ex[j]))
+ }
+ if(emin>=.) return((0,0))
+ q=(0,0)
+ for(j=1;j<=n;j++) {
+  a=asarray(X,j);b=asarray(Y,j)
+  if(a[1]!=0 & b[1]!=0) {
+   a=_c58b_mul(a,b,W);a=_c58f_restore(a,ex[j]-emin,W);q=_c58b_add(q,a,W)
+   if(W.error) return((0,0))
+  }
+ }
+ return(_c58f_restore(q,emin,W))
+}
+// Bounded exact (a*b-c*d)/den without full-width products.
+real rowvector _c58f_quotient(real rowvector a0,real rowvector b0,
+ real rowvector c0,real rowvector d0,real rowvector den0,struct _C58_Work scalar W) {
+ real rowvector a,b,c,d,den,x,y,q
+ real scalar ea,eb,ec,ed,ez,ex,ey,emin,eq,shift
+ if(W.error) return((0,0))
+ den=_c58b_norm(den0)
+ if(den[1]==0) {W.error=3;return((0,0));}
+ a=_c58f_split(a0,ea,W);b=_c58f_split(b0,eb,W)
+ c=_c58f_split(c0,ec,W);d=_c58f_split(d0,ed,W);den=_c58f_split(den,ez,W)
+ if(W.error) return((0,0))
+ ex=ea+eb;ey=ec+ed;emin=.
+ if(a[1]!=0 & b[1]!=0) emin=ex
+ if(c[1]!=0 & d[1]!=0) emin=min((emin,ey))
+ if(emin>=.) return((0,0))
+ x=_c58b_mul(a,b,W);y=_c58b_mul(c,d,W)
+ if(W.error) return((0,0))
+ if(x[1]!=0) x=_c58f_restore(x,ex-emin,W)
+ if(y[1]!=0) y=_c58f_restore(y,ey-emin,W)
+ q=_c58b_add(x,_c58b_neg(y),W)
+ if(W.error | q[1]==0) return((0,0))
+ q=_c58f_split(q,eq,W);shift=emin+eq-ez
+ if(W.error) return((0,0))
+ // Both reduced numerator and denominator are odd; a negative exponent
+ // cannot produce an integer quotient, even if an odd factor cancels.
+ if(shift<0) {W.error=3;return((0,0));}
+ q=_c58b_div(q,den,W)
+ if(W.error) return((0,0))
+ return(_c58f_restore(q,shift,W))
+}
+real rowvector _c58f_update_quotient(real rowvector a,real rowvector b,
+ real rowvector c,real rowvector d,real rowvector den,struct _C58_Work scalar W) {
+ real rowvector x,y
+ if(_c58f_wide_product(a,b,W) | _c58f_wide_product(c,d,W)) return(_c58f_quotient(a,b,c,d,den,W))
+ x=_c58b_mul(a,b,W);y=_c58b_mul(c,d,W)
+ return(_c58b_div(_c58b_add(x,_c58b_neg(y),W),den,W))
+}
+// Certification needs the residual sign, so a common positive power of2
+// may be removed without reconstructing a potentially over-width residual.
+real scalar _c58f_residual_sign(transmorphic scalar A,real scalar i,
+ transmorphic scalar N,real rowvector rhs,real rowvector den,real scalar n,struct _C58_Work scalar W) {
+ transmorphic scalar X,Y
+ real scalar j
+ real rowvector v
+ X=asarray_create("real",2);Y=asarray_create("real",2)
+ for(j=1;j<=n;j++) {asarray(X,(1,j),asarray(A,(i,j)));asarray(Y,(j,1),asarray(N,(j,1)));}
+ asarray(X,(1,n+1),rhs);asarray(Y,(n+1,1),_c58b_neg(den))
+ v=_c58f_identity_cell(X,Y,(1),(0,0),1,1,n+1,W)
+ return(v[1])
+}
 struct _C58_Cert scalar _c58u_update(real rowvector c,real matrix G,
  real colvector h,real scalar ne,struct _C58_Cert scalar prior,
  real scalar position,real scalar added,real scalar budget, | real scalar wide_decode)
@@ -481,9 +651,12 @@ struct _C58_Cert scalar _c58u_update(real rowvector c,real matrix G,
   if(re!=prior.rhs_exponent | any(ex[prior.basis]:!=prior.row_exponent[1..n])) W.error=5
   // The old inverse column links the new determinant to the verified old Db.
   for(i=1;i<=n;i++) {
+   if(_c58f_identity_needs(A,prior.inverse_numerator,prior.basis,i,position,n,W)) v=_c58f_identity_cell(A,prior.inverse_numerator,prior.basis,old_den,i,position,n,W)
+   else {
    v=(0,0)
    for(j=1;j<=n;j++) v=_c58b_add(v,_c58b_mul(asarray(A,(prior.basis[i],j)),asarray(prior.inverse_numerator,(j,position)),W),W)
    v=_c58b_add(v,_c58b_neg(_c58b_mul(old_den,_c58b_int(i==position),W)),W)
+   }
    if(v[1]!=0 & !W.error) W.error=5
   }
   ids=prior.basis:+J(n,1,0);ids[position]=added;out.basis=ids;out.phase_cost[2]=W.ops
@@ -491,8 +664,11 @@ struct _C58_Cert scalar _c58u_update(real rowvector c,real matrix G,
  if(!W.error) {
   out.phase=3;q=asarray_create("real",2);V=asarray_create("real",2)
   for(j=1;j<=n;j++) {
+   if(_c58f_identity_needs(A,prior.inverse_numerator,(added),1,j,n,W)) v=_c58f_rowcol(A,added,prior.inverse_numerator,j,n,W)
+   else {
    v=(0,0)
    for(i=1;i<=n;i++) v=_c58b_add(v,_c58b_mul(asarray(A,(added,i)),asarray(prior.inverse_numerator,(i,j)),W),W)
+   }
    asarray(q,(1,j),v)
   }
   pivot=asarray(q,(1,position));sgn=pivot[1]
@@ -501,9 +677,7 @@ struct _C58_Cert scalar _c58u_update(real rowvector c,real matrix G,
   for(i=1;i<=n;i++) for(j=1;j<=n;j++) {
    if(j==position) v=_c58b_mul(asarray(prior.inverse_numerator,(i,j)),_c58b_int(sgn),W)
    else {
-    a=_c58b_mul(pivot,asarray(prior.inverse_numerator,(i,j)),W)
-    b=_c58b_mul(asarray(prior.inverse_numerator,(i,position)),asarray(q,(1,j)),W)
-    v=_c58b_div(_c58b_add(a,_c58b_neg(b),W),old_den,W)
+    v=_c58f_update_quotient(pivot,asarray(prior.inverse_numerator,(i,j)),asarray(prior.inverse_numerator,(i,position)),asarray(q,(1,j)),old_den,W)
     v=_c58b_mul(v,_c58b_int(sgn),W)
    }
    asarray(V,(i,j),v)
@@ -513,9 +687,12 @@ struct _C58_Cert scalar _c58u_update(real rowvector c,real matrix G,
  if(!W.error) {
   out.phase=4
   for(i=1;i<=n;i++) for(j=1;j<=n;j++) {
+   if(_c58f_identity_needs(A,V,ids,i,j,n,W)) v=_c58f_identity_cell(A,V,ids,den,i,j,n,W)
+   else {
    v=(0,0)
    for(k=1;k<=n;k++) v=_c58b_add(v,_c58b_mul(asarray(A,(ids[i],k)),asarray(V,(k,j)),W),W)
    v=_c58b_add(v,_c58b_neg(_c58b_mul(den,_c58b_int(i==j),W)),W)
+   }
    if(v[1]!=0 & !W.error) W.error=5
   }
   out.phase_cost[4]=W.ops
@@ -530,10 +707,13 @@ struct _C58_Cert scalar _c58u_update(real rowvector c,real matrix G,
   }
   out.primal_sign=J(rows(G),1,.);out.dual_sign=J(n,1,.);ok=1
   for(i=1;i<=rows(G);i++) {
+   if(_c58f_identity_needs(A,N,(i),1,1,n,W) | _c58f_wide_product(asarray(A,(i,n+1)),den,W)) out.primal_sign[i]=_c58f_residual_sign(A,i,N,asarray(A,(i,n+1)),den,n,W)
+   else {
    v=_c58b_neg(_c58b_mul(asarray(A,(i,n+1)),den,W))
    for(j=1;j<=n;j++) v=_c58b_add(v,_c58b_mul(asarray(A,(i,j)),asarray(N,(j,1)),W),W)
    out.primal_sign[i]=v[1]
-   if((i<=ne & v[1]!=0) | (i>ne & v[1]>0)) ok=0
+   }
+   if((i<=ne & out.primal_sign[i]!=0) | (i>ne & out.primal_sign[i]>0)) ok=0
   }
   out.phase_cost[5]=W.ops
  }
@@ -569,6 +749,7 @@ real rowvector _c58r_rowcol(transmorphic scalar A,real scalar i,
 {
  real scalar j
  real rowvector q
+ for(j=1;j<=n;j++) if(_c58f_wide_product(asarray(A,(i,j)),asarray(fit.inverse_numerator,(j,k)),W)) return(_c58f_rowcol(A,i,fit.inverse_numerator,k,n,W))
  q=(0,0)
  for(j=1;j<=n;j++) q=_c58b_add(q,_c58b_mul(asarray(A,(i,j)),asarray(fit.inverse_numerator,(j,k)),W),W)
  return(q)
@@ -577,6 +758,7 @@ real scalar _c58r_ratio_compare(real rowvector a,real rowvector b,
  real rowvector c,real rowvector d,struct _C58_Work scalar W)
 {
  real rowvector x,y
+ if(_c58f_wide_product(a,d,W) | _c58f_wide_product(c,b,W)) return(_c58f_ratio(a,b,c,d,W))
  x=_c58b_mul(a,d,W);y=_c58b_mul(c,b,W)
  return(_c58b_cmp(x,y))
 }
@@ -723,7 +905,7 @@ real rowvector _c58d_double(real rowvector a0,real rowvector d0)
 }
 
 
-real scalar _c58_cert_ready() return(6202)
+real scalar _c58_cert_ready() return(6203)
 // Exact dyadic scaling only. Free variables use opposite columns. Each
 // coefficient must round-trip under the column scaling or certification stops.
 real matrix _c58_map(real matrix E,real matrix U,real rowvector c,real scalar free,|real scalar map_reason)
@@ -869,20 +1051,25 @@ real colvector _c61_basis(real matrix G,real colvector h,real scalar ne,
 real colvector _c61_active(real matrix G,real colvector h,real scalar ne,
  struct _C58_Cert scalar aux,struct _C58_Work scalar W, | real scalar wide_decode)
 {
- transmorphic scalar A
+ transmorphic scalar A,P
  real colvector choices
  real rowvector ex,v,a,N
- real scalar i,j,re
+ real scalar i,j,re,wide,signum
  choices=J(0,1,.);A=_c58i_rows(G,h,ex,re,W,wide_decode)
  for(i=1;i<=rows(G);i++) {
-  v=_c58b_neg(_c58b_mul(asarray(A,(i,cols(G)+1)),aux.denominator,W))
+  P=asarray_create("real",2)
+  wide=_c58f_wide_product(asarray(A,(i,cols(G)+1)),aux.denominator,W);v=(0,0)
+  if(!wide) v=_c58b_neg(_c58b_mul(asarray(A,(i,cols(G)+1)),aux.denominator,W))
   for(j=1;j<=cols(G);j++) {
-   N=_c58b_shift(_c58b_norm(aux.numerator[j,.]),-re,W)
-   v=_c58b_add(v,_c58b_mul(asarray(A,(i,j)),N,W),W)
+   N=_c58b_shift(_c58b_norm(aux.numerator[j,.]),-re,W);asarray(P,(j,1),N)
+   if(_c58f_wide_product(asarray(A,(i,j)),N,W)) wide=1
+   if(!wide) v=_c58b_add(v,_c58b_mul(asarray(A,(i,j)),N,W),W)
   }
   if(W.error) return(J(0,1,.))
-  if((i<=ne & v[1]!=0) | (i>ne & v[1]>0)) {W.error=5;return(J(0,1,.));}
-  if(v[1]==0) choices=choices\i
+  signum=(wide ? _c58f_residual_sign(A,i,P,asarray(A,(i,cols(G)+1)),aux.denominator,cols(G),W) : v[1])
+  if(W.error) return(J(0,1,.))
+  if((i<=ne & signum!=0) | (i>ne & signum>0)) {W.error=5;return(J(0,1,.));}
+  if(signum==0) choices=choices\i
  }
  if(W.error) return(J(0,1,.))
  return(_c61_pick(A,choices,cols(G),W))

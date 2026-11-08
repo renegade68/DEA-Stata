@@ -1,4 +1,4 @@
-*! version 1.10.1 08nov2026
+*! version 1.10.2 08nov2026
 *! Peer-only objectives, exact intended-sum certification and build diagnostics.
 *! Cross-efficiency: native IPM default and bounded explicit simplex certificates.
 *! 2026-11-02: explicit input VRS Lim-Zhu peer formula; preserve legacy default.
@@ -40,6 +40,7 @@
 *!   1.1.0  11feb2026  Unified syntax: supports both
 *!                        dea_crosseff x = y, [options]  (Form A)
 *!                        dea_crosseff, inputs(x) outputs(y) [options] (Form B)
+*!   1.10.2 08nov2026 Exact dyadic factoring within existing certificate arithmetic limits.
 *!   1.10.1 08nov2026 Scoped finite decoder for failed raw primaries; matched helper ABI.
 *!   1.0.0  06feb2026  Initial packaged version; based on earlier teaching/seminar versions
 
@@ -260,7 +261,7 @@ program define dea_crosseff, rclass
             mata: _dea_rec_abort(); _rsm_audit_reset(0); _rsm_success_reset(1,0); _dea_link_reset(2,0)
             mata: _c57_context_defaults(`solver_snapshot')
             local reload_exact=0
-            capture mata: assert(_c58_cert_ready()==6202 & findexternal("_c58_fit()")!=NULL & findexternal("_c58b_decode()")!=NULL & findexternal("_c60_certdiag()")!=NULL & findexternal("_c61_recover()")!=NULL & findexternal("_c61_pick()")!=NULL & findexternal("_c61_basis()")!=NULL & findexternal("_c61_active()")!=NULL & findexternal("_c62_ray()")!=NULL & findexternal("_c62_initial()")!=NULL & findexternal("_c62_empty_trace()")!=NULL)
+            capture mata: assert(_c58_cert_ready()==6203 & findexternal("_c58_fit()")!=NULL & findexternal("_c58b_decode()")!=NULL & findexternal("_c60_certdiag()")!=NULL & findexternal("_c61_recover()")!=NULL & findexternal("_c61_pick()")!=NULL & findexternal("_c61_basis()")!=NULL & findexternal("_c61_active()")!=NULL & findexternal("_c62_ray()")!=NULL & findexternal("_c62_initial()")!=NULL & findexternal("_c62_empty_trace()")!=NULL & findexternal("_c58f_split()")!=NULL & findexternal("_c58f_wide_product()")!=NULL & findexternal("_c58f_ratio()")!=NULL & findexternal("_c58f_identity_needs()")!=NULL & findexternal("_c58f_identity_cell()")!=NULL & findexternal("_c58f_restore()")!=NULL & findexternal("_c58f_rowcol()")!=NULL & findexternal("_c58f_quotient()")!=NULL & findexternal("_c58f_update_quotient()")!=NULL & findexternal("_c58f_residual_sign()")!=NULL)
             if _rc {
                 capture mata: mata drop _c58_multiplier()
                 capture mata: mata drop _c57_compute()
@@ -268,7 +269,7 @@ program define dea_crosseff, rclass
                 quietly run "`r(fn)'"
                 local reload_exact=1
             }
-            mata: assert(_c58_cert_ready()==6202 & findexternal("_c58_fit()")!=NULL & findexternal("_c58b_decode()")!=NULL & findexternal("_c60_certdiag()")!=NULL & findexternal("_c61_recover()")!=NULL & findexternal("_c61_pick()")!=NULL & findexternal("_c61_basis()")!=NULL & findexternal("_c61_active()")!=NULL & findexternal("_c62_ray()")!=NULL & findexternal("_c62_initial()")!=NULL & findexternal("_c62_empty_trace()")!=NULL)
+            mata: assert(_c58_cert_ready()==6203 & findexternal("_c58_fit()")!=NULL & findexternal("_c58b_decode()")!=NULL & findexternal("_c60_certdiag()")!=NULL & findexternal("_c61_recover()")!=NULL & findexternal("_c61_pick()")!=NULL & findexternal("_c61_basis()")!=NULL & findexternal("_c61_active()")!=NULL & findexternal("_c62_ray()")!=NULL & findexternal("_c62_initial()")!=NULL & findexternal("_c62_empty_trace()")!=NULL & findexternal("_c58f_split()")!=NULL & findexternal("_c58f_wide_product()")!=NULL & findexternal("_c58f_ratio()")!=NULL & findexternal("_c58f_identity_needs()")!=NULL & findexternal("_c58f_identity_cell()")!=NULL & findexternal("_c58f_restore()")!=NULL & findexternal("_c58f_rowcol()")!=NULL & findexternal("_c58f_quotient()")!=NULL & findexternal("_c58f_update_quotient()")!=NULL & findexternal("_c58f_residual_sign()")!=NULL)
             capture mata: assert(_c70_exact_ready()==7002 & findexternal("_c70_build()")!=NULL & findexternal("_c70_fit()")!=NULL & findexternal("_c70_value()")!=NULL & findexternal("_c70_decode()")!=NULL & findexternal("_c70b_certify()")!=NULL & findexternal("_c70b_solve()")!=NULL & findexternal("_c70u_update()")!=NULL & findexternal("_c70r_repair()")!=NULL & findexternal("_c70_recover()")!=NULL & findexternal("_c70_ray()")!=NULL)
             if _rc | `reload_exact' {
                 quietly findfile _dea_crosseff_exactobjective.ado

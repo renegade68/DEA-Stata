@@ -1,5 +1,5 @@
 {
-  "provenance": "Original references: T83 independently certified/export-verified original models and T81 accepted outputs, T84 baseline Lim-Zhu rows, and Fraction-derived peer boundary values. Version1.10.1 changes only evaluator1 in nine ray_p1020 VRS configurations: weights are derived from the candidate-selected exact primal/dual certificates after independent verification, rational raw-unit mapping and one binary64 conversion. Observed floating results are not copied to select the new weights. Other fixed references, data and tolerances are unchanged.",
+  "provenance": "Original references: T83 independently certified/export-verified original models and T81 accepted outputs, T84 baseline Lim-Zhu rows, and Fraction-derived peer boundary values. Version1.10.1 changes only evaluator1 in nine ray_p1020 VRS configurations: weights are derived from the candidate-selected exact primal/dual certificates after independent verification, rational raw-unit mapping and one binary64 conversion. Observed floating results are not copied to select the new weights. Other fixed references, data and tolerances are unchanged. Version1.10.2 changes only three secondary stage entries in two ray_p1020 VRS output configurations, and adds finite/unbounded expectations from independent exact primal/dual or feasible-point/improving-ray verification. All data, weights, self values and peer references are preserved.",
   "T83_seal_sha256": "627a29d5e3b7a9a057ca90f0a167ec538381e56a3f6dd8ebc34816b54f820155",
   "tolerance": 1e-10,
   "cases": [
@@ -8559,8 +8559,8 @@
         8.98846567431158e+307
       ],
       "stages": [
-        3.0,
-        3.0,
+        2.0,
+        2.0,
         3.0,
         3.0,
         0.0
@@ -8615,6 +8615,16 @@
           8.98846567431158e+307,
           8.98846567431158e+307
         ]
+      ],
+      "secondary_proofs": [
+        {
+          "evaluator": 1,
+          "classification": "optimal"
+        },
+        {
+          "evaluator": 2,
+          "classification": "optimal"
+        }
       ]
     },
     {
@@ -8706,7 +8716,7 @@
       ],
       "stages": [
         3.0,
-        3.0,
+        2.0,
         3.0,
         3.0,
         0.0
@@ -8761,6 +8771,16 @@
           8.98846567431158e+307,
           8.98846567431158e+307
         ]
+      ],
+      "secondary_proofs": [
+        {
+          "evaluator": 1,
+          "classification": "unbounded"
+        },
+        {
+          "evaluator": 2,
+          "classification": "optimal"
+        }
       ]
     },
     {
@@ -18444,5 +18464,6 @@
       }
     }
   ],
-  "decoder_certificate_seal_sha256": "8e283b6191bdb13e08eb94e280dc4d04469eeb671dce76b5e160fae40ae221fb"
+  "decoder_certificate_seal_sha256": "8e283b6191bdb13e08eb94e280dc4d04469eeb671dce76b5e160fae40ae221fb",
+  "dyadic_certificate_seal_sha256": "6413b29df57801ca689dfad357a0054aa47bb2204c84aa0e7562a8049ccb54b3"
 }

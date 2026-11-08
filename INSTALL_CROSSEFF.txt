@@ -1,12 +1,13 @@
-Cross-efficiency 1.10.1 matched-package installation and verification
+Cross-efficiency 1.10.2 matched-package installation and verification
 
 Install all 79 files in ado/ together. Nine cross-efficiency helpers are required:
 _dea_crosseff_context.ado, _dea_crosseff_simplex.ado, _dea_crosseff_raw.ado,
 _dea_crosseff_cert.ado, _dea_crosseff_diagnostics.ado,
 _dea_crosseff_objective.ado, _dea_crosseff_exactobjective.ado and
 _dea_crosseff_optima.ado, and _dea_crosseff_cerange.ado.
-Context, objective and CE-range helpers are 1.0.0; certificate, exactobjective
-and raw recovery are 1.0.1; simplex is 1.3.1; diagnostics and optima are 1.1.0.
+Context, objective and CE-range helpers are 1.0.0; certificate is 1.0.2;
+exactobjective and raw recovery are 1.0.1; simplex is 1.3.1;
+diagnostics and optima are 1.1.0.
 The complete inventory is in INSTALL_COOPER.txt. This package uses local-folder
 installation and does not provide net-install metadata.
 
@@ -24,7 +25,7 @@ Put the complete directory first on adopath:
     findfile _dea_crosseff_optima.ado
     findfile _dea_crosseff_cerange.ado
     findfile dea_crosseff.sthlp
-Internal compatibility readiness: context 57; base certificate 6202;
+Internal compatibility readiness: context 57; base certificate 6203;
 diagnostics/objective 7001; exactobjective 7002; simplex/raw recovery 8402;
 optima core 7301;
 CE core 7601; optima and CE adapters 7701. These are ABI checks, not
@@ -212,3 +213,15 @@ diagnostic paths retain their default domain. Existing accepted selections,
 LP budgets and all public diagnostic schemas (including raw8401) are preserved.
 Resource-limited secondary attempts warn and retain certified primary weights.
 Run python -B tests/run.py --suite crosseff_decoder --suite crosseff_raw.
+
+Bounded exact arithmetic (1.10.2)
+Selected over-width products and residual checks remove common powers of two
+before exact subtraction/division and full-value restoration. The existing
+128-limb, work and pivot limits remain unchanged. This can distinguish a finite
+secondary optimum from an exact improving ray; an unbounded secondary retains
+certified primary weights. Resource-limited unknowns retain their warnings.
+The public diagnostic schemas remain unchanged; base certificate readiness is6203.
+Use the complete matched ado directory when upgrading, including the main loader.
+Run python -B tests/run.py --suite crosseff_dyadic --suite crosseff_raw.
+The arithmetic suite generates synthetic integers locally and requires no private
+data, Git history, captured logs or user-specific directory edits.

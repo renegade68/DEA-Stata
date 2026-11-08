@@ -23,6 +23,9 @@ def main():
    w=csv.writer(f);w.writerow(['id','x1','x2','y1','y2']);w.writerows(z['data'])
   code+=f'import delimited using "{d/"data.csv"}",clear varnames(1) asdouble\n'
   code+=f'dea_crosseff x1 x2=y1 y2,dmu(id) eng(simplex) rts({z["rts"]}) ori({z["orientation"]}) method({z["method"]}) vrscross({z["rule"]}) tol({tol}) gen(res) matrix\nassert r(raw_recovery_version)==8401\n'
+  if 'secondary_proofs' in z:
+   unbounded=sum(q['classification']=='unbounded' for q in z['secondary_proofs'])
+   code+=f'assert r(n_raw_secondary_unknown)==0\nassert r(n_raw_secondary_unbounded)=={unbounded}\nassert r(n_exact_unbounded)=={unbounded}\n'
   for k in ['ce_matrix','weights_input','weights_output','intercept','stage_status','peer_count','raw_recovery_diagnostics','raw_peer_status']:
    code+=f'mata: savebin("{d/k}.bin",st_matrix("r({k})"))\n'
   code+=f'mata: savebin("{d}/data.bin",st_data(.,tokens("id x1 x2 y1 y2 res res_self res_maverick")))\n'
@@ -40,6 +43,10 @@ def main():
   np.testing.assert_array_equal(readbin(d/'stage_status.bin').ravel(),z['stages'])
   np.testing.assert_array_equal(data[:,:5],z['data'])
   C=readbin(d/'ce_matrix.bin');PS=readbin(d/'raw_peer_status.bin');RD=readbin(d/'raw_recovery_diagnostics.bin')
+  for q in z.get('secondary_proofs',[]):
+   i=q['evaluator']-1;finite=q['classification']=='optimal'
+   assert RD[i,6]==1 and RD[i,7]==(1 if finite else -1)
+   assert RD[i,10]==(2 if finite else 3) and RD[i,11]==(2 if finite else 4)
   for i,recovered in enumerate(z['recovered']):
    assert RD[i,6]==recovered and RD[i,1]==(z['initial_stage'][i]==0)
    if not recovered:

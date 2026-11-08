@@ -12,6 +12,7 @@ python3 -B tests/run.py --list
 python3 -B tests/run.py --suite smoke
 python3 -B tests/run.py --suite crosseff_raw
 python3 -B tests/run.py --suite crosseff_decoder
+python3 -B tests/run.py --suite crosseff_dyadic
 python3 -B tests/check_publication.py
 ```
 
@@ -42,6 +43,14 @@ The decoder suite verifies exact finite binary64 decomposition, the unchanged
 default coefficient domain, and invalid-input/arithmetic-budget boundaries.
 The raw suite preserves fixed legacy selections and independently certified
 references for the additional recoveries in version1.10.1.
+
+The dyadic suite generates signed synthetic integers to check exact products,
+differences, integer quotients, restored values and residual signs. It verifies
+zero and negative denominators, noninteger quotients, width/budget failures and
+preservation of inputs and ordinary-path integer work counts. Its fixed seed
+does not require captured research files. The raw references additionally check
+finite secondary certification versus exact unboundedness in version1.10.2;
+the selected weights and efficiency values are unchanged.
 
 The detailed suite-specific commands below remain available for advanced use.
 They assume DEA_STATA (and, if needed, DEA_RSCRIPT) is already set and a new

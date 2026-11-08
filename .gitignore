@@ -300,5 +300,6 @@
 !/tests/test_portability.py
 !/tests/public_files.json
 !/tests/test_crosseff_decoder.py
+!/tests/test_crosseff_dyadic.py
 !/tests/requirements.txt
 !/tests/PUBLICATION.txt

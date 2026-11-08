@@ -165,8 +165,10 @@ class Portability(unittest.TestCase):
 
     def test_registry_marks_historical_inputs(self):
         registry = runner.suites()
-        self.assertEqual(len(registry), 83)
+        self.assertEqual(len(registry), 84)
         self.assertIn('crosseff_decoder', registry)
+        self.assertIn('crosseff_dyadic', registry)
+        self.assertFalse(registry['crosseff_dyadic']['required'])
         for name in ('sample_selection', 'output_protection', 'projection_recovery'):
             self.assertIn('--baseline-ado', registry[name]['required'])
         self.assertFalse(registry['crosseff_raw']['required'])
