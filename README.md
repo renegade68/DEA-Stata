@@ -70,7 +70,7 @@ Automatic helper loading and temporary outputs preserve existing result columns
 on compute errors. See [installation and verification](INSTALL_CROSSGAME.txt) and
 [the recovery test contract](tests/CROSSGAME_RECOVERY.txt).
 
-Install the complete matched 90-file `ado/` directory; see
+Install the complete matched 92-file `ado/` directory; see
 [the cross-efficiency installation guide](INSTALL_CROSSEFF.txt).
 
 Package update (`dea` 2.0.73): the explicit Cooper simplex path now uses
@@ -799,7 +799,7 @@ formulas, arithmetic/export limits and precise quality codes. A substantive
 pooling game or formal feasible-set Nash model requires a separate method choice.
 
 
-`dea_fuzzy` 1.1.0 preserves the triangular Kao-Liu best/worst alpha-cut model.
+`dea_fuzzy` 1.2.0 preserves the triangular Kao-Liu best/worst alpha-cut model.
 The joint cuts are Cartesian products of marginal intervals; the finite grid
 samples a membership function and does not supply probabilities, defuzzification
 or alpha-weighted rankings. At the smallest requested cut, each row must have
@@ -813,6 +813,17 @@ attainable. `matrix` returns both endpoint grids, complete-row flags and origina
 observation indices. Nesting checks bridge missing cuts, alpha=1 uses the same
 center matrix, and quoted/numeric identifiers are displayed safely. See
 [dea_fuzzy help](ado/dea_fuzzy.sthlp) for the formulas and missing-score contract.
+
+Requested alpha=1 centers also receive bounded original-data simplex and exact
+primal/dual checks, for both orientations and all four RTS choices. A verified
+score replaces both center endpoints while native scores and failure reports
+remain in `r(center_diagnostics)`. Counts distinguish certified, unverified and
+unavailable DMUs; unverified or unavailable centers produce warnings. The
+current scope is at most 32 selected DMUs and 16 multiplier variables including
+RTS extras, with additional arithmetic/work/export limits. Certification uses
+the stored binary data and does not cover alpha<1 cuts or summary means.
+See [fuzzy installation and verification](INSTALL_FUZZY.txt) and
+[portable center regressions](tests/FUZZY_QUALITY.txt).
 
 
 Core `dea` 2.0.59 makes three environmental-model conventions explicit.

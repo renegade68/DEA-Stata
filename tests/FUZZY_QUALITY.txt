@@ -1,0 +1,44 @@
+Fuzzy center certification and recovery regression
+
+Run from the package root:
+    python3 -B tests/run.py --suite fuzzy_quality --output /new/output
+The output directory must be new and outside the package. Use --stata when
+automatic executable discovery is unsuitable. Python3.10+, NumPy/SciPy and a
+licensed Stata16+ batch executable are required. No Git, R, network access or
+private research inputs are required. The generic runner lists this suite.
+
+The 60 test records cover:
+- One exact grid: four synthetic datasets, six row/unit/column variants,
+  four RTS choices and two orientations (192 profiles, 992 row certificates).
+  Python Fraction independently verifies primal and dual feasibility,
+  complementarity, strong duality and original envelopment constraints.
+  Matrix construction and lossless dyadic mapping are checked too.
+- Twelve public near-degenerate profiles, with 60 exact reference center scores.
+  The fixture is synthetic. Stored numbers round-trip unchanged; the exported
+  score is compared to a rational optimum, not to another rounded DEA result.
+  Native availability is allowed to differ between Stata versions. Explicit
+  fault tests, rather than a platform-specific failure count, require recovery.
+- Thirty native-status, certificate/export/work-limit, warning, output-protection,
+  missing-helper, shared-context and reload tests using isolated source copies.
+- Sixteen sample/bounds and maximum-supported-dimension contracts covering
+  both orientations and all RTS choices. Upper-bound cases certify 256 rows.
+- One interleaved cooperative/crossgame/network check of 33 result matrices.
+
+Useful subsets (invoke the suite script directly, or pass --only to the runner):
+    --only '^exact_grid$'
+    --only '^near_'
+    --only '^(recover_|retain_|missing_|budget_)'
+    --only '^(sample_bounds_|scope_boundary_)'
+    --only '^(context_|reload_|shared_loader_)'
+
+The test harness copies the matched runtime before fault injection. It never
+edits installed code. Logs, generated do-files and binary witnesses stay in the
+chosen local output directory; they can contain local paths and Stata licensing
+details and should not be committed. The portable fixture/helper/test files
+contain no personal paths. Exact helper witnesses are regenerated during a run.
+
+The exact certificate applies only to alpha=1 and the represented binary data,
+within n<=32 and p<=16 plus arithmetic/work/export limits. Passing these finite
+fixtures does not guarantee every dataset or every platform. Numerical R/SciPy
+comparisons and alpha<1 interval checks are separate from exact certification.
+The existing fuzzy model/RTS/precision/alpha-name suites remain available.

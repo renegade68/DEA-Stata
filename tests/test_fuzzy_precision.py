@@ -158,7 +158,9 @@ foreach v in x1 x2 y1 y2 {{
 
     for status in [1,2]:
         text=instrumented.replace('status=S.errorcode()',f'status={status}')
-        run(f'inject_consistent_status_{status}',FIXTURE+PROBE_INIT+CMD+f'\nassert r(lp_missing)==36 & r(lp_count)==36 & r(lp_retries)==36\nassert r(lp_infeasible)=={36 if status==1 else 0} & r(lp_unbounded)=={36 if status==2 else 0}\nassert missing(res_pess_a0,res_opt_a100)\n',text)
+        # Native reports remain counted after independent center recovery.
+        # Only the two non-center cuts retain unavailable endpoints.
+        run(f'inject_consistent_status_{status}',FIXTURE+PROBE_INIT+CMD+f'\nassert r(lp_missing)==24 & r(lp_count)==36 & r(lp_retries)==36\nassert r(lp_infeasible)=={36 if status==1 else 0} & r(lp_unbounded)=={36 if status==2 else 0}\nassert r(n_center_certified)==6 & r(n_center_recovered)==6\nassert missing(res_pess_a0) & !missing(res_opt_a100)\nassert res_pess_a100==res_opt_a100\n',text)
     text=instrumented.replace('status=S.errorcode()','status=attempt')
     run('inject_inconsistent_status',FIXTURE+OLD+PROBE_INIT+unchanged(CMD+' replacevars',498)+'assert probe_calls==24\n',text)
 

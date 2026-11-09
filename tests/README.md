@@ -14,6 +14,7 @@ python3 -B tests/run.py --suite crosseff_raw
 python3 -B tests/run.py --suite crosseff_decoder
 python3 -B tests/run.py --suite crosseff_dyadic
 python3 -B tests/run.py --suite crossgame_recovery
+python3 -B tests/run.py --suite fuzzy_quality
 python3 -B tests/check_publication.py
 ```
 
@@ -1860,7 +1861,7 @@ methods at actual requested tolerances. A private observation copy records
 original LPs and integer witnesses. Fraction arithmetic checks accepted
 primal/dual points, optimal-face links and unbounded rays; public journal
 sums and numerical-primary preservation are checked. Artifacts never
-replace installed code. See INSTALL_CROSSEFF.txt for the 78-file contract.
+replace installed code. See INSTALL_CROSSEFF.txt for the current 92-file contract.
 
 
 Cross-efficiency native preflight and warning checks:
@@ -1934,7 +1935,8 @@ units before testing stationarity against the original exact cost.
 
 ## Crossgame recovery and command lifecycle
 
-`python3 -B tests/run.py --suite crossgame_recovery` exercises 30 fixed
+`python3 -B tests/run.py --suite crossgame_recovery
+python3 -B tests/run.py --suite fuzzy_quality` exercises 30 fixed
 synthetic contracts: recovered versus unresolved solves, original observation
 mapping, automatic loading, missing functions, warm/shared state, mixed commands,
 protected outputs, simulated Break, record limits and complete Nash iteration
@@ -1964,3 +1966,16 @@ It is not a table of expected floating results. Numerical SciPy follower
 comparisons remain diagnostic when rounding the leader's optimal face changes
 the problem. No feasibility tolerance is relaxed to pass those comparisons.
 Raw generated logs and test outputs are local; the existing privacy policy applies.
+
+
+## Fuzzy center certification and recovery
+
+`python3 -B tests/run.py --suite fuzzy_quality --output /new/output` runs 60
+portable records, including 992 independently checked rational row certificates,
+12 near-degenerate public profiles, 30 fault/limit contracts, 16 sample/scope
+contracts and a 33-matrix interleaving check. All inputs are synthetic.
+No Git history, R or private research folder is needed. See
+[FUZZY_QUALITY.txt](FUZZY_QUALITY.txt) and [installation](../INSTALL_FUZZY.txt).
+Native failure counts can vary across Stata versions; dedicated fault injection
+checks recovery and warning semantics independently. Exact certificates apply
+to alpha=1 represented data within the documented dimension/work/export scope.

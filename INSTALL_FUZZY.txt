@@ -1,0 +1,70 @@
+Fuzzy DEA matched-package installation and verification (09 Nov 2026)
+
+Copy the complete 92-file ado/ directory. This is local-folder installation;
+no net-install metadata is provided. INSTALL_COOPER.txt lists every file.
+The new center helpers are _dea_fuzzy_load.ado and _dea_fuzzy_exact.ado.
+They use the matched crossgame loader, two-stage exact utilities, simplex,
+exact-arithmetic, original-data guards and context modules in that directory.
+Copying only dea_fuzzy.ado or only the two new helpers is insufficient.
+
+Use a fresh licensed Stata 16+ session. Save your data before clear all.
+Keep a complete prior package for rollback; put the new folder first on adopath:
+    adopath ++ "/absolute/path/to/DEA-Stata/ado"
+    which dea_fuzzy
+    findfile _dea_fuzzy_load.ado
+    findfile _dea_fuzzy_exact.ado
+    findfile _dea_twostage_exact.ado
+    findfile _dea_crossgame_load.ado
+Wrapper/help version 1.2.0; fuzzy helpers 1.0.0, center readiness 13501.
+Readiness identifies compatible code; it is not an iteration limit.
+Partial-function reload support is not an arbitrary Mata struct ABI guarantee.
+
+The following example uses positive synthetic quantities and triangular bounds.
+FUZZY_INSTALL_EXAMPLE_BEGIN
+clear
+input double id x y
+1 1 1
+2 2 1
+3 4 1
+end
+gen double xl=.5*x
+gen double xu=2*x
+gen double yl=.5*y
+gen double yu=2*y
+dea_fuzzy, inputs(x) outputs(y) xlo(xl) xhi(xu) ylo(yl) yhi(yu) dmu(id) alpha(0 .5 1) gen(f) matrix
+assert r(n_center_certified)==3 & r(n_center_unverified)==0
+assert r(n_center_unavailable)==0 & r(center_attempts)==3
+assert r(lp_missing)==0
+assert f_pess_a100==f_opt_a100
+assert abs(f_pess_a100-1/x)<1e-15
+matrix list r(center_diagnostics)
+matrix list r(summary)
+FUZZY_INSTALL_EXAMPLE_END
+
+Only requested alpha=1 centers receive original-data primal/dual certification.
+Both orientations and CRS/VRS/DRS/IRS are supported, with at most 32 selected
+DMUs and 16 multiplier variables: inputs+outputs, plus 2 for VRS, 1 for DRS/IRS.
+Arithmetic, work and export limits also apply. All requested centers are checked,
+including native successes. The exact model uses the stored binary64 data.
+Certificates do not establish accuracy of unknown pre-rounded measurements,
+alpha<1 cuts or the descriptive complete-cohort summary.
+
+A certified score replaces both center endpoints. Native scores and failure
+reports remain in r(center_diagnostics). Its quality is 0 (neither available),
+1 (at least one numerical endpoint retained, unverified), or 2 (both certified).
+Recovered DMUs replace at least one unavailable native endpoint. Existing native
+LP counters include later-recovered failures; center_attempts is separate.
+If certification reaches a limit, native numbers remain explicitly unverified
+and missing values stay missing, with warnings. This does not prove infeasibility.
+Unresolved persistent numerical failure still returns r(498) before replacing
+permanent results. No tolerance relaxation or arbitrary zero/one substitution
+is used to make a failed center appear certified.
+
+Portable regression, from the extracted package root:
+    python3 -B tests/run.py --suite fuzzy_quality --output /new/output
+No Git history, research directory, R or downloads are required. NumPy/SciPy and
+licensed Stata are required; the runner discovers Stata or accepts --stata.
+Additional numerical comparison with an installed deaR package:
+    python3 -B tests/run.py --suite fuzzy_models --with-r --output /new/output
+R comparison is supplementary, not an exact-optimality certificate.
+See tests/FUZZY_QUALITY.txt, tests/README.md and help dea_fuzzy.

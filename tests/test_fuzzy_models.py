@@ -164,6 +164,16 @@ def main():
   target=out/('fault_'+fault);shutil.copytree(pkg,target);p=target/'dea_fuzzy.ado';src=p.read_text()
   code={'partial':'eff_pess=(.9\\.\\.5); eff_opt=(.\\.1\\.5)','all':'eff_pess=J(n,1,.); eff_opt=J(n,1,.)','gap':'eff_pess[1]=(alpha==0 ? .9 : (alpha==.5 ? . : .1)); eff_opt[1]=(alpha==1 ? .1 : 1)','crisp':'eff_pess[1]=.1; eff_opt[1]=.9'}[fault]
   p.write_text(src.replace('    st_matrix(stats_name,lpstats)',code+'\n    st_matrix(stats_name,lpstats)'))
+  # Corrupt the final temporary center outputs as well: the new exact center
+  # route otherwise repairs the earlier solver-level injection. These cases
+  # test summary/nesting checks, independently of recovery correctness.
+  center=target/'_dea_fuzzy_exact.ado'
+  if center.exists():
+   cs=center.read_text();hook=' st_store(obs,st_varindex(pess),P);st_store(obs,st_varindex(opt),O)'
+   assert hook in cs
+   late=code.replace('eff_pess','P').replace('eff_opt','O').replace('alpha','1')
+   center.write_text(cs.replace(hook,late+'\n'+hook))
+
   if fault in ['gap','crisp']:
    body=DATA+'gen str12 res_pess_a0="old value"\n'+unchanged(cmd+' replacevars',498)
   else:

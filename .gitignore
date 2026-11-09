@@ -337,3 +337,12 @@
 !/tests/fixtures/games_bases.json
 !/tests/games_witness.py
 !/tests/test_games_quality.py
+
+# Matched fuzzy-center helpers, exact witnesses and portable checks.
+!/ado/_dea_fuzzy_exact.ado
+!/ado/_dea_fuzzy_load.ado
+!/INSTALL_FUZZY.txt
+!/tests/FUZZY_QUALITY.txt
+!/tests/test_fuzzy_quality.py
+!/tests/fuzzy_witness.py
+!/tests/fixtures/fuzzy_center.json

@@ -1,4 +1,4 @@
-*! version 1.1.0  03nov2026
+*! version 1.2.0  09nov2026
 *! F11: disambiguate rounded alpha suffixes; return sorted alpha/output mapping.
 *! 2026-11-01: accept the minimum option abbreviations advertised in help.
 *! 2026-11-01: apply solver tolerance; check feasibility, bounds, and interval ordering.
@@ -199,7 +199,7 @@ void _dea_fuzzy_solve(
     string scalar pess_var,
     string scalar opt_var,
     string scalar touse,
-    string scalar stats_name)
+    string scalar stats_name, | string scalar native_name)
 {
     // ----------------------------------------------------------------
     // Load data
@@ -261,7 +261,9 @@ void _dea_fuzzy_solve(
     real matrix    A_ineq, A_eq
     real colvector b_ineq, b_eq, x0, y0
     real rowvector fit, lpstats
+    real matrix nativefits
     lpstats=J(1,6,0)
+    nativefits=J(n,12,.)
 
     for (k = 1; k <= n; k++) {
 
@@ -320,6 +322,7 @@ void _dea_fuzzy_solve(
 
             fit=_dea_fuzzy_lp(c,A_ineq,b_ineq,A_eq,b_eq,lb,ub,tol,orientation)
             eff_pess[k]=fit[1]
+            nativefits[k,1..6]=fit
             lpstats[1..5]=lpstats[1..5]+(1,fit[2..5])
             if (fit[6]<.) lpstats[6]=max((lpstats[6],fit[6]))
 
@@ -351,6 +354,7 @@ void _dea_fuzzy_solve(
 
             fit=_dea_fuzzy_lp(c,A_ineq,b_ineq,A_eq,b_eq,lb,ub,tol,orientation)
             eff_opt[k]=fit[1]
+            nativefits[k,7..12]=fit
             lpstats[1..5]=lpstats[1..5]+(1,fit[2..5])
             if (fit[6]<.) lpstats[6]=max((lpstats[6],fit[6]))
         }
@@ -411,6 +415,7 @@ void _dea_fuzzy_solve(
 
             fit=_dea_fuzzy_lp(c,A_ineq,b_ineq,A_eq,b_eq,lb,ub,tol,orientation)
             eff_pess[k]=fit[1]
+            nativefits[k,1..6]=fit
             lpstats[1..5]=lpstats[1..5]+(1,fit[2..5])
             if (fit[6]<.) lpstats[6]=max((lpstats[6],fit[6]))
 
@@ -442,6 +447,7 @@ void _dea_fuzzy_solve(
 
             fit=_dea_fuzzy_lp(c,A_ineq,b_ineq,A_eq,b_eq,lb,ub,tol,orientation)
             eff_opt[k]=fit[1]
+            nativefits[k,7..12]=fit
             lpstats[1..5]=lpstats[1..5]+(1,fit[2..5])
             if (fit[6]<.) lpstats[6]=max((lpstats[6],fit[6]))
         }
@@ -450,6 +456,7 @@ void _dea_fuzzy_solve(
     // ----------------------------------------------------------------
     // Store results back to Stata
     // ----------------------------------------------------------------
+    if(args()>=15 & native_name!="") st_matrix(native_name,nativefits)
     st_matrix(stats_name,lpstats)
     st_store(obs_indices, st_varindex(pess_var), eff_pess)
     st_store(obs_indices, st_varindex(opt_var),  eff_opt)
@@ -780,6 +787,18 @@ program define dea_fuzzy, rclass
     // Parse alpha list
     // =========================================================================
     local n_alpha : word count `alpha'
+    local _has_center=0
+    foreach a of numlist `alpha' {
+        if `a'==1 local _has_center=1
+    }
+    if `_has_center' {
+        quietly findfile _dea_fuzzy_load.ado
+        local _fuzzy_loader "`r(fn)'"
+        capture program drop _dea_fuzzy_load
+        quietly run "`_fuzzy_loader'"
+        quietly _dea_fuzzy_load
+    }
+
 
     // =========================================================================
     // Orientation label for display
@@ -803,7 +822,7 @@ program define dea_fuzzy, rclass
     // Header
     // =========================================================================
     di as text "{hline `c(linesize)'}"
-    di as text "dea_fuzzy v1.1 — Triangular alpha-cut DEA (Kao-Liu best/worst convention)"
+    di as text "dea_fuzzy v1.2 — Triangular alpha-cut DEA (Kao-Liu best/worst convention)"
     di as text "  `ort_label', `rts_label'"
     di as text "  DMUs: `n_dmus'  |  Inputs: `m_in'  |  Outputs: `m_out'"
     di as text "  α-levels: `alpha'"
@@ -812,7 +831,9 @@ program define dea_fuzzy, rclass
     // =========================================================================
     // Loop over α-levels: create temp vars, call Mata solver
     // =========================================================================
-    tempname _lpstats
+    tempname _lpstats _native _center_diag _center_counts _fctx
+    local _center_attempts=0
+    matrix `_center_counts'=J(1,4,0)
     local _lp_count=0
     local _lp_retries=0
     local _lp_infeasible=0
@@ -839,7 +860,20 @@ program define dea_fuzzy, rclass
                     "`ylo_vars'", "`yhi_vars'",                   ///
                     `a', "`orientation'", "`rts'", `_use_tol',     ///
                     "`_pess_`ia''", "`_opt_`ia''",                 ///
-                    "`touse'", "`_lpstats'")
+                    "`touse'", "`_lpstats'", "`_native'")
+            }
+            if `a'==1 {
+                mata: `_fctx'=_c57_context_save()
+                capture noisily {
+                    mata: _dea_rec_abort();_rsm_audit_reset(0);_rsm_success_reset(1,0);_dea_link_reset(2,0)
+                    mata: _f135_apply("`inputs'","`outputs'","`touse'","`_pess_`ia''","`_opt_`ia''", ///
+                        "`rts'","`orientation'",`tolerance',"`_native'","`_lpstats'","`_center_diag'","`_center_counts'")
+                }
+                local _center_rc=_rc
+                mata: _c57_context_restore(`_fctx')
+                mata: mata drop `_fctx'
+                if `_center_rc' exit `_center_rc'
+                local _center_attempts=`_center_attempts'+`n_dmus'
             }
             local _lp_count=`_lp_count'+`_lpstats'[1,1]
             local _lp_retries=`_lp_retries'+`_lpstats'[1,2]
@@ -878,6 +912,12 @@ program define dea_fuzzy, rclass
     }
     if `_lp_missing'>0 {
         di as text "Note: `_lp_missing' scores unavailable; repeated native status 1/2 is not a mathematical certificate."
+    }
+
+    if `_has_center' {
+        if `_center_counts'[1,4]>0 di as text "Note: alpha=1 scores recovered for " `_center_counts'[1,4] " DMUs; native failure reports remain in center_diagnostics."
+        if `_center_counts'[1,2]>0 di as text "Warning: " `_center_counts'[1,2] " alpha=1 DMUs retain numerical scores without exact certification; inspect center_diagnostics."
+        if `_center_counts'[1,1]>0 di as text "Warning: " `_center_counts'[1,1] " alpha=1 DMUs remain unavailable; certification limits do not prove infeasibility."
     }
 
     tempname _summary _summary_pess _summary_opt _summary_complete _summary_obs
@@ -969,6 +1009,16 @@ program define dea_fuzzy, rclass
         return matrix eff_opt=`_summary_opt'
         return matrix complete=`_summary_complete'
         return matrix obs_index=`_summary_obs'
+    }
+    return scalar n_center_unavailable=`_center_counts'[1,1]
+    return scalar n_center_unverified=`_center_counts'[1,2]
+    return scalar n_center_certified=`_center_counts'[1,3]
+    return scalar n_center_recovered=`_center_counts'[1,4]
+    return scalar center_attempts=`_center_attempts'
+    return local center_scope "alpha1_original_data"
+    if `_has_center' {
+        matrix colnames `_center_diag'=observation quality reason recovered native_pess_score native_pess_retries native_pess_infeasible native_pess_unbounded native_pess_numerical native_pess_residual native_opt_score native_opt_retries native_opt_infeasible native_opt_unbounded native_opt_numerical native_opt_residual exact_ok phase cert_status cert_reason reserved5 reserved6 cert_ops reserved8 cert_limbs weight_obj_error weight_eq_error weight_ineq_error weight_obj_guard lambda_eq_error lambda_ineq_error lambda_error score_error arithmetic_error reserved19 guard_ops exact_reason map_reason zero_columns repair_stop repair_steps rts_code input_orientation
+        return matrix center_diagnostics=`_center_diag'
     }
     return scalar n_alpha    = `n_alpha'
     return scalar N          = `n_dmus'

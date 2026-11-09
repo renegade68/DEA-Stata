@@ -1,6 +1,6 @@
 Cross-efficiency 1.10.4 matched-package installation and verification
 
-Install all 83 files in ado/ together. Ten cross-efficiency helpers are required:
+Install all 92 files in ado/ together. Ten cross-efficiency helpers are required:
 _dea_crosseff_context.ado, _dea_crosseff_simplex.ado, _dea_crosseff_raw.ado,
 _dea_crosseff_cert.ado, _dea_crosseff_diagnostics.ado,
 _dea_crosseff_objective.ado, _dea_crosseff_exactobjective.ado,
@@ -132,7 +132,7 @@ rounded or loses terms; failed secondary solves retain primary fallback.
 The two branches do not promise identical selected weights. The primary
 score, surrogate definitions, peer-ratio conventions and existing6201/6601
 schemas are preserved. New objective diagnostics use7001. See help and
-tests/CROSSEFF_OBJECTIVE.txt. Install the complete current 90-file ado/
+tests/CROSSEFF_OBJECTIVE.txt. Install the complete current 92-file ado/
 bundle, including all nine cross-efficiency helpers listed above.
 
 Optional optimal-face diagnostics (1.8.0)

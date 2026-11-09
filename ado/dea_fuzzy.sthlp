@@ -4,7 +4,7 @@
 {* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-11-01: explicit crisp-DEA identifiers in the sequential example.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 1.1.0  03nov2026}{...}
+{* *! version 1.2.0  09nov2026}{...}
 {viewerjumpto "Related article" "dea_fuzzy##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_bootstrap" "help dea_bootstrap"}{...}
@@ -295,13 +295,36 @@ scores or missing unbounded output scores for such rows.
 Converged solutions are checked for finite parameters, scaled primal
 constraint/bound residuals, objective consistency, and efficiency in
 [0, 1+1e-8]. A failed LP is retried once with
-min(current tolerance/100, 1e-12). If both attempts report native status 1 or 2, its score is missing and a note
-is displayed. These are solver reports, not mathematical infeasibility or
+min(current tolerance/100, 1e-12). If both attempts report native status 1 or 2,
+its native score is unavailable. These are solver reports, not mathematical infeasibility or
 unboundedness certificates. With the positive-row domain and matching
 self-reference, the mathematical radial problems have finite feasible solutions;
-a native failure in that domain is retained as an unavailable numerical result.
-Other persistent numerical failures return {cmd:r(498)} before any permanent
+a native failure does not establish that the model has no solution.
+At alpha=1, the independent check below may recover a certified score.
+Unrecovered status 1/2 scores remain missing, with a note.
+Other persistent numerical failures that remain unresolved return {cmd:r(498)} before any permanent
 result variables are changed, including when {cmd:replacevars} is specified.
+
+{phang}
+When alpha=1 is requested, every selected DMU receives an additional bounded
+simplex and exact-arithmetic check using the original stored center data.
+This check verifies primal/dual optimality and original-data envelopment
+constraints for either orientation and all four RTS choices. A successful
+certificate replaces both center endpoints with the same efficiency, after
+checking the finite numerical export against {cmd:tolerance()}.
+It also checks native successes, not only missing scores. Exact arithmetic
+treats the stored binary data as exact; it does not recover unrecorded decimal
+digits or establish accuracy of alpha<1 cuts or summary means.
+
+{phang}
+Center certification supports at most 32 selected DMUs and 16 multiplier
+variables: the number of inputs plus outputs, with two additional variables
+for VRS, one for DRS/IRS, and none for CRS. Arithmetic, work and export limits
+also apply within those dimensions. If certification cannot be completed,
+available native scores are retained as unverified and unavailable scores
+remain missing. A warning identifies these cases; a limit does not prove
+infeasibility. Inspect {cmd:r(center_diagnostics)} and the center counts below.
+For grids without alpha=1, this additional check is not run.
 
 {phang}
 The complete alpha grid is checked for pessimistic <= optimistic and nested
@@ -592,22 +615,32 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 {synopt:{cmd:r(n_alpha)}}number of distinct alpha levels{p_end}
 {synopt:{cmd:r(tolerance)}}requested initial convergence tolerance{p_end}
 {synopt:{cmd:r(check_tolerance)}}fixed validation threshold, 1e-8{p_end}
-{synopt:{cmd:r(lp_count)}}LP problems evaluated, including grid reruns{p_end}
-{synopt:{cmd:r(lp_retries)}}extra single-LP attempts{p_end}
+{synopt:{cmd:r(lp_count)}}native LP problems evaluated, including grid reruns{p_end}
+{synopt:{cmd:r(lp_retries)}}extra native single-LP attempts{p_end}
 {synopt:{cmd:r(grid_retries)}}complete alpha-grid retries, 0 or 1{p_end}
 {synopt:{cmd:r(lp_missing)}}missing individual scores in the final grid{p_end}
 {synopt:{cmd:r(lp_infeasible)}}legacy name: repeated native status 1 reports across all passes, not a certificate{p_end}
 {synopt:{cmd:r(lp_unbounded)}}legacy name: repeated native status 2 reports across all passes, not a certificate{p_end}
 {synopt:{cmd:r(max_primal_violation)}}largest scaled residual among accepted solutions, including bound and objective-consistency checks{p_end}
+{synopt:{cmd:r(n_center_unavailable)}}DMUs with neither center endpoint available in the final pass{p_end}
+{synopt:{cmd:r(n_center_unverified)}}DMUs retaining at least one numerical center endpoint without certification{p_end}
+{synopt:{cmd:r(n_center_certified)}}DMUs with both center endpoints certified{p_end}
+{synopt:{cmd:r(n_center_recovered)}}certified DMUs replacing at least one unavailable native center endpoint{p_end}
+{synopt:{cmd:r(center_attempts)}}DMU center checks attempted, including grid reruns{p_end}
 
 {pstd}
-The total number of solver attempts is {cmd:r(lp_count)+r(lp_retries)}.
+The total number of native solver attempts is {cmd:r(lp_count)+r(lp_retries)}.
+These native counters include failures subsequently recovered at alpha=1;
+they do not count the additional certification work. The first three center
+counts sum to {cmd:r(N)} when alpha=1 is requested; all center counts and
+attempts are zero otherwise. Recovered DMUs are a subset of certified DMUs.
 Missing scores are retained; nesting checks compare all known levels across gaps.
 
 {p2col 5 24 28 2: Macros}{p_end}
 {synopt:{cmd:r(cmd)}}{cmd:dea_fuzzy}{p_end}
 {synopt:{cmd:r(formulation)}}{cmd:triangular_kaoliu_basic}{p_end}
 {synopt:{cmd:r(summary_sample)}}{cmd:complete_alpha_grid}{p_end}
+{synopt:{cmd:r(center_scope)}}{cmd:alpha1_original_data}; scope of the additional check, not a success indicator{p_end}
 {synopt:{cmd:r(orientation)}}orientation ({cmd:input} or {cmd:output}){p_end}
 {synopt:{cmd:r(rts)}}returns to scale ({cmd:crs}, {cmd:vrs}, {cmd:drs}, or {cmd:irs}){p_end}
 {synopt:{cmd:r(alpha)}}parsed α-levels used, in ascending order{p_end}
@@ -630,10 +663,31 @@ variable; a rounded suffix alone does not specify the calculation's alpha.
 
 {p2col 5 24 28 2: Matrices}{p_end}
 {synopt:{cmd:r(summary)}}one row per sorted alpha; columns alpha, N_pess, N_opt, N_pair, N_complete, mean_pess, mean_opt, min_pess, max_pess, min_opt, max_opt{p_end}
+{synopt:{cmd:r(center_diagnostics)}}one row per selected DMU when alpha=1 is requested; available without {cmd:matrix}{p_end}
 {synopt:{cmd:r(eff_pess)}}pessimistic scores; requires {cmd:matrix}{p_end}
 {synopt:{cmd:r(eff_opt)}}optimistic scores; requires {cmd:matrix}{p_end}
 {synopt:{cmd:r(complete)}}complete-cohort flag; requires {cmd:matrix}{p_end}
 {synopt:{cmd:r(obs_index)}}original observation number; requires {cmd:matrix}{p_end}
+
+{pstd}
+In {cmd:r(center_diagnostics)}, {cmd:observation} identifies the original
+observation number, {cmd:quality} is 0 (neither endpoint available), 1 (at least
+one retained numerical endpoint, unverified), or 2 (both certified), and
+{cmd:recovered} is 1 when certification replaces an unavailable native endpoint.
+{cmd:reason} is 0 on certification, 201 for the sample-size limit, and 202 for
+the multiplier-dimension limit. Other nonzero reasons identify mapping,
+certificate, arithmetic or numerical-export failures; none establishes
+infeasibility. {cmd:exact_reason} repeats this final reason.
+
+{pstd}
+The {cmd:native_pess_*} and {cmd:native_opt_*} columns preserve each endpoint's
+pre-certification score, retry count, repeated status 1/2 indicators,
+unresolved numerical-failure indicator and scaled residual in the final grid
+pass. They may report failure even when {cmd:quality}=2.
+The remaining named fields report certificate status, work and limb counts,
+mapping/repair information, original-data export checks and relative export
+errors. Reserved fields have no interpretation. A certified center does not
+certify the other cuts, their summaries, or the native solver's termination.
 
 {marker references}{...}
 {title:References}

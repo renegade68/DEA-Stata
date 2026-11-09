@@ -1,6 +1,6 @@
 Crossgame 2.4.0 matched-package installation and verification
 
-Install the complete 90-file ado/ directory together, not dea_crossgame.ado alone.
+Install the complete 92-file ado/ directory together, not dea_crossgame.ado alone.
 Three companions are required:
     _dea_crossgame_core.ado
     _dea_crossgame_load.ado
