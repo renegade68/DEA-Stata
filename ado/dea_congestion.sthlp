@@ -266,6 +266,20 @@ exact arithmetic; neither option guarantees a unique projection or decomposition
 The primary summary is always the mean relative congestion, regardless of
 which objective was chosen.
 
+{pstd}
+In the November 2000 author manuscript's two 17-year industry examples,
+four Table 3 components differ from the displayed VRS/raw-slack procedure:
+textile 1989 capital (0 versus 0.52), textile 1993 labor (0 versus 1.7875),
+automobile 1990 labor (34.34 versus about 35.08985383), and automobile 1996
+labor (0 versus about 1.50372480). These are component quantities, not the
+primary relative score. Exact checks of the printed-decimal, stored-binary64
+and normalized-binary64 models establish unique projections and target
+components for these four cases; alternative optima and these representation
+differences do not explain the discrepancies. This is a bounded comparison
+with the author manuscript, not a verified erratum in the final publication.
+The packaged {cmd:tests/COOPER_TABLE.txt} describes the sources and reproducible
+{cmd:cooper_table} regression. No result is adjusted to match the manuscript table.
+
 {p2colset 9 34 36 2}
 {p2col:{it:prefix}}mean_i(c_i/x0_i); 0 means no detected input congestion{p_end}
 {p2col:{it:prefix}{cmd:_phi}}output expansion phi (at least 1){p_end}

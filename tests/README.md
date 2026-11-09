@@ -15,6 +15,7 @@ python3 -B tests/run.py --suite crosseff_decoder
 python3 -B tests/run.py --suite crosseff_dyadic
 python3 -B tests/run.py --suite crossgame_recovery
 python3 -B tests/run.py --suite fuzzy_quality
+python3 -B tests/run.py --suite cooper_table
 python3 -B tests/check_publication.py
 ```
 
@@ -1843,6 +1844,17 @@ empty-basis,recovery-depth,affine-bound and MILP checks and explicit limitations
 Run `python tests/test_stage_linkage.py --stata "$DEA_STATA" --output /new/output`.
 The packaged [STAGE_LINKAGE.txt](STAGE_LINKAGE.txt) describes the exact basis/target
 checks, public diagnostics, fault controls, sample order and scope limits.
+
+Cooper source-example components: `python3 -B tests/run.py --suite cooper_table`
+checks132exact primal/dual witnesses on12model sequences,528tampering controls,
+two public commands over34DMUs, and four targeted internal range pipelines with
+all17reference rows retained. The compact fixture distinguishes original decimal,
+stored binary64 and actual normalized models. It checks four component differences
+from the November2000 author manuscript without claiming final-publication errata.
+Requires NumPy and Stata16+; optional `--with-r` requires R lpSolve and checks all132
+numeric LP transcriptions. See [COOPER_TABLE.txt](COOPER_TABLE.txt) for the exact
+values, source links, scope and privacy guidance. No private evidence or optimizer
+is needed to verify the rational certificates.
 
 Cooper2.0.73 integration: `test_cooper_certified.py` tests the shared native/simplex
 weight-domain rejection and the explicit16/128selection contract using portable

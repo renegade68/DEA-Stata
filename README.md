@@ -887,6 +887,15 @@ For simplex, `tolerance()` classifies summaries rather than relaxing exact LP
 acceptance. See the [full contract](ado/dea_congestion.sthlp) and
 [matched-package installation guide](INSTALL_COOPER.txt).
 
+The four component differences in the November 2000 author manuscript's industry
+table have a [portable exact regression](tests/COOPER_TABLE.txt). For the reviewed
+VRS/raw-slack equations and complete 17-year samples, unique projections and
+component ranges exclude alternative-optimum selection as their explanation.
+Printed-decimal, stored-binary64 and actual normalized models give the same
+classification. This does not establish an erratum in the final publication.
+Run `python3 -B tests/run.py --suite cooper_table`; optional `--with-r` adds
+independent numeric LP comparisons. Production calculations are unchanged.
+
 
 `dea` 2.0.61 adds explicit `model(undesirable) disposability(weak)` for a
 convex joint weak-disposal DDF. The VRS construction separates active and idle

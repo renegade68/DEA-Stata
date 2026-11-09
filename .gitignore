@@ -346,3 +346,9 @@
 !/tests/test_fuzzy_quality.py
 !/tests/fuzzy_witness.py
 !/tests/fixtures/fuzzy_center.json
+
+# Exact source-example witnesses and portable Cooper table regression.
+!/tests/COOPER_TABLE.txt
+!/tests/cooper_certified/table.py
+!/tests/fixtures/cooper_table.json
+!/tests/test_cooper_table.py

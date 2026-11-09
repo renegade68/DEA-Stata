@@ -1,0 +1,78 @@
+COOPER SOURCE-EXAMPLE REGRESSION
+
+Run from the package root with Python3.10+, NumPy and licensed Stata16+:
+  python3 -B tests/run.py --suite cooper_table
+Optional independent numeric comparison (R with lpSolve installed):
+  python3 -B tests/run.py --suite cooper_table --with-r
+
+The runner discovers executables or accepts --stata/--rscript and the documented
+DEA_STATA/DEA_RSCRIPT environment variables. No edits to paths in source files,
+Git history, network downloads or private research folders are needed.
+Results default to a new OS temporary directory. Keep raw outputs local; only
+the common runner's shareable-summary.json is designed for sharing.
+
+SOURCE AND INTERPRETATION
+
+The numerical example is from the November2000 author manuscript of Cooper,
+Deng, Gu, Li and Thrall, "Using DEA to Improve the Management of Congestion in
+Chinese Industries (1981-1997)":
+https://iiif.library.cmu.edu/file/Cooper_box00010_fld00034_bdl0001_doc0001/Cooper_box00010_fld00034_bdl0001_doc0001.pdf
+Public dataset cross-check: https://github.com/vjbolos/SdeaR/tree/master/data
+The SdeaR data, not a SdeaR congestion command, were used for that cross-check.
+The manuscript is not treated as the final2001 publication. Original author
+analysis code and the final publication's table have not been verified here.
+
+Both industries retain all17observations for1981-1997, with positive labor,
+capital and output. For VRS, output expansion and congweight(raw), four
+components differ from the manuscript's Table3:
+
+Industry / year / input       Manuscript     Exact printed-decimal result
+Textile / 1989 / capital          0          13/25 = 0.52
+Textile / 1993 / labor            0          143/80 = 1.7875
+Automobile / 1990 / labor        34.34       6961827/198400 = 35.0898538306452
+Automobile / 1996 / labor         0          298339/198400 = 1.5037247983871
+
+These are component quantities, not mean relative congestion scores. The
+printed-decimal, stored-binary64 and actual normalized-binary64 models are
+checked separately. Each has a unique three-coordinate first-stage projection
+and a unique target component on the conditional second-stage optimal face.
+All four values lie outside the printed table's two-decimal rounding intervals.
+For these inputs/equations, neither alternative optima nor these representation
+differences explain the discrepancies. This does not establish final-publication
+errata or a general absence of multiple optima. The public command still
+certifies its normalized-binary64 LP, not every raw-data rational formulation.
+
+EVIDENCE AND EXECUTION
+
+The fixture contains decimal observations, manuscript component numbers, hex
+coefficients for the actual normalized objective, and compact sparse rational
+primal/dual witnesses. It contains no local logs, generated datasets, captured
+binary arrays, private paths, licenses or external solver executables.
+The witness checker reconstructs the sequential LPs and their exact optimal
+faces. It verifies Ax=b, x>=0, A'y<=c and c'x=b'y using Fraction arithmetic.
+No optimizer is used to accept these exact proofs. Corruptions of primal/dual
+values, objectives and right-hand sides must be rejected even at1e-50.
+
+There are12model sequences (four targets times three representations), each
+with11proofs: radial, slack, six projection endpoints, decomposition and two
+target-component endpoints. The132proofs are finite regression evidence.
+They were obtained by an independent exact calculation; update them only after
+separately reviewing the mathematical model and evidence, never to fit a failure.
+
+Two public commands evaluate all34DMUs and retain the64other manuscript-component
+rounding comparisons. Four internal-pipeline calls evaluate only the target row
+but keep all17reference observations. They check the unchanged live model
+coefficients, complete certified ranges, and bitwise exports against the
+normalized model's proofs. This is not a full34DMU public congranges run.
+No sample is reduced to the four disputed observations. Numeric returned
+coordinates alone are not exact certificates.
+
+Optional R solves numeric transcriptions of all132LPs using lpSolve. Positive
+row/objective scaling is numeric-only; exact proofs remain unmodified. Every
+R result must return, with relative objective and scaled primal residual below
+1e-7. This is an independent formulation check, not a third-party complete
+Cooper procedure or evidence of universal numerical reliability. Native IPM
+availability and general package/installation checks are separate suites.
+
+This regression changes no production objective, selection policy, tolerance,
+warning, solver or reference-sample rule.
