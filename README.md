@@ -70,7 +70,7 @@ Automatic helper loading and temporary outputs preserve existing result columns
 on compute errors. See [installation and verification](INSTALL_CROSSGAME.txt) and
 [the recovery test contract](tests/CROSSGAME_RECOVERY.txt).
 
-Install the complete matched 83-file `ado/` directory; see
+Install the complete matched 87-file `ado/` directory; see
 [the cross-efficiency installation guide](INSTALL_CROSSEFF.txt).
 
 Package update (`dea` 2.0.73): the explicit Cooper simplex path now uses
@@ -882,3 +882,12 @@ Unavailable scores stay missing with an explicit `_status` field. Nonnegative
 data require a positive input and good output per selected DMU; zero-bad data
 are permitted but do not imply null-jointness. The model imposes no materials
 balance. See help for direction, RTS, output protection and numerical limits.
+
+### Two-stage numerical quality
+
+Network and Stackelberg commands retain native diagnostics while verifying
+small models against the original stored inputs. Independent products and means
+are composed exactly before export. Unrepresentable positive aggregate values
+are withheld with a warning; certified stage scores remain available.
+Use `matrix` to inspect `r(score_quality)`, `r(score_reason)` and native provenance.
+See [two-stage installation and verification](INSTALL_TWOSTAGE.txt).

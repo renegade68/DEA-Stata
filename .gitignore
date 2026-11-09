@@ -317,3 +317,13 @@
 !/tests/test_crossgame_recovery.py
 !/tests/fixtures/crossgame_recovery.json
 !/tests/CROSSGAME_RECOVERY.txt
+
+# Matched two-stage certificates, quality checks and portable witnesses.
+!/INSTALL_TWOSTAGE.txt
+!/ado/_dea_independent_exact.ado
+!/ado/_dea_stackelberg_exact.ado
+!/ado/_dea_twostage_exact.ado
+!/ado/_dea_twostage_quality.ado
+!/tests/fixtures/twostage_bases.json
+!/tests/test_twostage_quality.py
+!/tests/twostage_witness.py

@@ -1,4 +1,4 @@
-*! version 1.2.0  02nov2026
+*! version 1.3.0  09nov2026
 *! 2026-11-01: accept the minimum option abbreviations advertised in help.
 *! 2026-11-01: use shared Form A/B parser; preserve if/in expressions.
 *! 2026-11-01: preflight output names; explicit replacevars; protect model data.
@@ -121,7 +121,7 @@ program define dea_network, rclass
         di as error "tolerance() must be positive and finite"
         exit 198
     }
-    capture mata: assert(_dea_ts_ready()==1)
+    capture mata: assert(_dea_ts_ready()==12401 & _t123_ready()==12301 & _t122_ready()==12201 & _t121_ready()==12101 & _t120_ready()==12001 & findexternal("_t120_rel()")!=NULL)
     if _rc {
         quietly findfile _dea_twostage.ado
         quietly run "`r(fn)'"
@@ -169,9 +169,21 @@ program define dea_network, rclass
     di as text "Two-stage DEA: " as result "`formulation'" as text " (RTS: `rts'; orientation: `orientation')"
     if `legacy_fallback' di as text "Note: this multiplicative option combination uses independent stages; no shared-weight network constraint."
     tempname ts
-    mata: _dea_ts_compute("`inputs'","`intermediates'","`outputs'","`dmu'","`touse'", ///
+    tempname t120context
+    if 1 {
+        mata: `t120context'=_c57_context_save()
+        mata: _dea_rec_abort(); _rsm_audit_reset(0); _rsm_success_reset(1,0); _dea_link_reset(2,0)
+    }
+    capture noisily mata: _dea_ts_compute("`inputs'","`intermediates'","`outputs'","`dmu'","`touse'", ///
         "`generate'","network","`mode'","`leader'","`rts'","`orientation'",`tolerance', ///
         "`matrix'"!="","`detail'"!="","`debug'"!="","`ts'")
+    local t120rc=_rc
+    if 1 {
+        mata: _c57_context_restore(`t120context')
+        mata: mata drop `t120context'
+    }
+    if `t120rc' exit `t120rc'
+
     quietly summarize `generate'_overall if `touse'
     local mean_overall=r(mean)
     quietly summarize `generate'_stage1 if `touse'
@@ -192,6 +204,61 @@ program define dea_network, rclass
     return scalar mean_overall=`mean_overall'
     return scalar mean_stage1=`mean_stage1'
     return scalar mean_stage2=`mean_stage2'
+    if "`mode'"=="relational" {
+        mata: st_numscalar("`ts'_ncert",sum(st_matrix("`ts'_quality")[.,6]:==1))
+        return scalar t120_n_certified=`ts'_ncert
+        return scalar t120_n_unverified=`n'-`ts'_ncert
+        if "`matrix'"!="" return matrix t120_quality=`ts'_quality
+        scalar drop `ts'_ncert
+    }
+    if "`mode'"!="relational" {
+        mata: st_numscalar("`ts'_ncert",sum(st_matrix("`ts'_iq1")[.,8]:==1)+sum(st_matrix("`ts'_iq2")[.,8]:==1))
+        return scalar t122_n_certified=`ts'_ncert
+        return scalar t122_n_unverified=2*`n'-`ts'_ncert
+        if "`matrix'"!="" {
+            return matrix t122_quality1=`ts'_iq1
+            return matrix t122_quality2=`ts'_iq2
+        }
+        scalar drop `ts'_ncert
+    }
+    return local quality_policy "certify_or_retain_unverified"
+    return local aggregate_policy "exact_or_withhold"
+    local j=0
+    foreach component in overall stage1 stage2 {
+        local ++j
+        return scalar n_certified_`component'=`ts'_counts[1,`j']
+        return scalar n_unverified_`component'=`ts'_counts[2,`j']
+    }
+    return scalar n_withheld_overall=`ts'_counts[3,1]
+    if "`mode'"!="relational" {
+        forvalues j=1/2 {
+            return scalar n_certified_indep`j'=`ts'_icounts[1,`j']
+            return scalar n_unverified_indep`j'=`ts'_icounts[2,`j']
+        }
+    }
+    if "`matrix'"!="" {
+        foreach part in sq sr native {
+            matrix colnames `ts'_`part'=overall stage1 stage2
+        }
+        return matrix score_quality=`ts'_sq
+        return matrix score_reason=`ts'_sr
+        return matrix native_efficiencies=`ts'_native
+        if "`mode'"!="relational" {
+            foreach part in iq ir nb bench {
+                matrix colnames `ts'_`part'=stage1 stage2
+            }
+            return matrix independent_efficiencies=`ts'_bench
+            return matrix independent_quality=`ts'_iq
+            return matrix independent_reason=`ts'_ir
+            return matrix native_independent=`ts'_nb
+            return matrix native_lambda_stage1=`ts'_nl1
+            return matrix native_lambda_stage2=`ts'_nl2
+            if "`mode'"!="noncooperative" {
+                matrix colnames `ts'_aq=quality reason value rel_error operations maxlimbs arithmetic_error legacy_value
+                return matrix aggregate_diagnostics=`ts'_aq
+            }
+        }
+    }
     if "`matrix'"!="" {
         matrix colnames `ts'_scores=overall stage1 stage2
         matrix colnames `ts'_status=overall stage1 stage2
@@ -212,7 +279,7 @@ program define dea_network, rclass
             return matrix lambda_stage2=`ts'_l2
         }
     }
-    foreach suffix in meta scores status v w u joint l1 l2 {
+    foreach suffix in counts icounts sq sr native iq ir nb nl1 nl2 aq bench iq1 iq2 meta scores status v w u joint l1 l2 quality {
         capture matrix drop `ts'_`suffix'
     }
 end

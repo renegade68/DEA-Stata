@@ -1948,3 +1948,21 @@ boundary using NumPy/SciPy. Historical accepted primary/secondary weights and th
 completed Nash prefix must remain unchanged; newly recovered LPs are checked
 against independent LP objectives and every completed iteration, rather than
 requiring an old fallback or interrupted Nash score to remain unchanged.
+
+### Two-stage exact quality and native provenance
+
+Run `python tests/run.py --suite twostage_quality --stata /path/to/stata-mp`
+for exact product/mean export boundaries, valid zero follower controls, helper
+reloads, certificate limits and native versus certified output contracts.
+Run `--suite twostage_models` for the full model/option grid and `--suite
+twostage_lp` for native LP capture, exact recovery and retained native failure
+checks. NumPy/SciPy and Stata 16+ are required. No R, Git history, downloads,
+private research folders or external expected-output files are required.
+
+`fixtures/twostage_bases.json` stores binary input data and compact basis row
+indices. `twostage_witness.py` reconstructs primal and dual optima with Python
+Fractions and checks feasibility and strong duality before deriving scores.
+It is not a table of expected floating results. Numerical SciPy follower
+comparisons remain diagnostic when rounding the leader's optimal face changes
+the problem. No feasibility tolerance is relaxed to pass those comparisons.
+Raw generated logs and test outputs are local; the existing privacy policy applies.

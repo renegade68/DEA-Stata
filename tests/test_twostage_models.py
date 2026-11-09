@@ -12,7 +12,7 @@ from test_output_protection import unchanged
 from test_io_syntax import CAPTURE,VERIFY,QUALIFIERS,fixture as io_fixture
 REPO=Path(__file__).resolve().parents[1]
 PUBLISHED_DATA='"dmu","x1","x2","z1","z2","y1","y2"\n1,1178744,673512,7451757,856735,984143,681687\n2,1381822,1352755,10020274,1812894,1228502,834754\n3,1177494,592790,4776548,560244,293613,658428\n4,601320,594259,3174851,371863,248709,177331\n5,6699063,3531614,37392862,1753794,7851229,3925272\n6,2627707,668363,9747908,952326,1713598,415058\n7,1942833,1443100,10685457,643412,2239593,439039\n8,3789001,1873530,17267266,1134600,3899530,622868\n9,1567746,950432,11473162,546337,1043778,264098\n10,1303249,1298470,8210389,504528,1697941,554806\n11,1962448,672414,7222378,643178,1486014,18259\n12,2592790,650952,9434406,1118489,1574191,909295\n13,2609941,1368802,13921464,811343,3609236,223047\n14,1396002,988888,7396396,465509,1401200,332283\n15,2184944,651063,10422297,749893,3355197,555482\n16,1211716,415071,5606013,402881,854054,197947\n17,1453797,1085019,7695461,342489,3144484,371984\n18,757515,547997,3631484,995620,692731,163927\n19,159422,182338,1141950,483291,519121,46857\n20,145442,53518,316829,131920,355624,26537\n21,84171,26224,225888,40542,51950,6491\n22,15993,10502,52063,14574,82141,4181\n23,54693,28408,245910,49864,0.1,18980\n24,163297,235094,476419,644816,142370,16976\n25,1544215,828963,7832893,667964,1602873,477733\n'
-MATS=['efficiencies','status','weights_input','weights_intermediate','weights_output','decomposition_status','follower_status','follower_route','lambda_stage1','lambda_stage2']
+MATS=['efficiencies','status','weights_input','weights_intermediate','weights_output','decomposition_status','follower_status','follower_route','t121_quality','t122_quality1','t122_quality2','lambda_stage1','lambda_stage2']
 
 def fit(c,A,b,E=None,h=None,bounds=(0,None)):
  return linprog(c,A_ub=A,b_ub=b,A_eq=E,b_eq=h,bounds=bounds,method='highs',options=dict(primal_feasibility_tolerance=1e-9,dual_feasibility_tolerance=1e-9))
@@ -66,6 +66,11 @@ def verify(path,shape,kind,method,rts,ort,leader,tol):
  rel=kind=='network' and method=='multiplicative' and rts=='crs' and ort=='input';nc=method=='noncooperative'
  counts=dict(independent_LPs=0,joint_LPs=0,max_score_gap=0.,max_decomp_gap=0.,unavailable_scores=int(np.isnan(R).sum()),decomp_fallback=0,follower_failed=0)
  gap=0
+ if nc:
+  from twostage_witness import check
+  truths=check(path.name,a)
+  counts['floating_follower_oracle_max_gap']=0.
+  counts['exact_follower_rows']=0
  for k in range(n):
   b=np.array([stage(x,z,k,rts,ort),stage(z,y,k,rts,ort)]);counts['independent_LPs']+=2
   if rel:
@@ -91,12 +96,25 @@ def verify(path,shape,kind,method,rts,ort,leader,tol):
    if nc:
     active=np.count_nonzero(z.max(0)>0)
     route=M['follower_route'][k,0]
-    assert route in [0,1,2] and (route==0 or route==(2 if active==1 else 1))
+    assert route in [0,1,2,3] and (route in [0,3] or route==(2 if active==1 else 1))
+    assert (route==3)==(M['t121_quality'][k,9]==1)
     j=0 if leader=='stage1' else 1;lead=M['bench'][k,j];follow=R[k,2-j];st=M['follower_status'][k,0]
-    assert R[k,j+1]==lead or np.isnan(R[k,j+1]) and np.isnan(lead)
+    if route==3:
+     # The certified leader need not equal the old native benchmark bit-for-bit.
+     # Independent benchmarks and linked outputs have separate verification.
+     assert abs(R[k,j+1]-b[j])<3e-6
+     lead=R[k,j+1]
+    else:assert R[k,j+1]==lead or np.isnan(R[k,j+1]) and np.isnan(lead)
     if st==2:
      f=joint(x,z,y,k,leader,lead);assert f.success;counts['joint_LPs']+=1
      expected=-f.fun/lead if leader=='stage1' else -f.fun
+     if route==3:
+      # Retain the floating comparison as a diagnostic. The near fixture shows
+      # both non-dyadic normalization loss and floating feasibility effects.
+      counts['floating_follower_oracle_max_gap']=max(counts['floating_follower_oracle_max_gap'],abs(follow-expected))
+      expected=float(truths[k][2-j])
+      assert list(R[k])==[float(v) for v in truths[k]]
+      counts['exact_follower_rows']+=1
      gap=max(gap,abs(follow-expected));assert follow<=b[1-j]+3e-6
     else:assert st in [0,1] and np.isnan(follow) and np.isnan(R[k,0]);counts['follower_failed']+=int(st==1)
    else:
@@ -130,9 +148,9 @@ write.csv(res,a[5],row.names=FALSE)
 '''
 
 def main():
- ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--stata',required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--only');ap.add_argument('--source-ado',type=Path);ap.add_argument('--rscript');a=ap.parse_args()
+ ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--stata',required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--only');ap.add_argument('--rscript');a=ap.parse_args()
  out=a.output.resolve();out.mkdir(parents=True,exist_ok=False);pkg=out/'ado';pkg.mkdir();h={}
- paths=list(a.source_ado.iterdir()) if a.source_ado else [REPO/n for n in package_files(REPO)]
+ paths=[REPO/n for n in package_files(REPO)]
  for p in paths:
   if p.suffix in ['.ado','.do','.sthlp']:raw=p.read_bytes();(pkg/p.name).write_bytes(raw);h[p.name]=hashlib.sha256(raw).hexdigest()
  (out/'manifest.json').write_text(json.dumps(dict(source_sha256=h,stata=a.stata),indent=2)+'\n');rows=[]
@@ -166,7 +184,8 @@ def main():
    for name in MATS:
     if name.startswith('weights_') and not(rel or nc):continue
     if name=='decomposition_status' and not rel:continue
-    if name in ['follower_status','follower_route'] and not nc:continue
+    if name in ['follower_status','follower_route','t121_quality'] and not nc:continue
+    if name.startswith('t122_') and (rel or nc):continue
     if name.startswith('lambda_') and rel:continue
     body+=f'mata: savebin("{name}.bin",st_matrix("r({name})"))\n'
    expected='relational_crs' if rel else 'noncooperative_crs' if nc else 'independent_ordering' if kind=='stackelberg' else 'independent_mean' if method=='additive' else 'independent_product'

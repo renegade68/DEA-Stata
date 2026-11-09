@@ -1,0 +1,76 @@
+Two-stage matched-package installation and verification (09 Nov 2026)
+
+Copy the complete 87-file ado/ directory. This is a local-folder installation;
+no net-install metadata is provided. Do not copy only the two public commands.
+Their required additional helpers are:
+    _dea_twostage_exact.ado
+    _dea_stackelberg_exact.ado
+    _dea_independent_exact.ado
+    _dea_twostage_quality.ado
+The complete shared-solver inventory is in INSTALL_COOPER.txt.
+
+Use a fresh licensed Stata 16+ session, or save your data before clear all.
+Put this package first on adopath. Keep the complete prior package for rollback.
+    adopath ++ "/absolute/path/to/DEA-Stata/ado"
+    which dea_network
+    which dea_stackelberg
+    findfile _dea_twostage_exact.ado
+    findfile _dea_stackelberg_exact.ado
+    findfile _dea_independent_exact.ado
+    findfile _dea_twostage_quality.ado
+Wrappers/help version1.3.0, core1.1.0/readiness12401; four helpers1.0.0.
+Readiness values are compatibility markers, not iteration or precision limits.
+Partial helper reload tests are bounded checks, not an arbitrary Mata ABI promise.
+
+The example below uses only synthetic data, and can be run in an empty session.
+TWOSTAGE_INSTALL_EXAMPLE_BEGIN
+clear
+input double id x z y
+1 3 1 1
+2 1 1 3
+end
+dea_network x=y, intermediates(z) method(independent) dmu(id) gen(net) matrix
+assert r(n_certified_overall)==2
+assert r(n_withheld_overall)==0
+assert abs(net_overall-1/9)<1e-15 in 1
+matrix list r(score_quality)
+matrix list r(native_efficiencies)
+dea_stackelberg, inputs(x) intermediates(z) outputs(y) method(noncooperative) leader(stage2) dmu(id) gen(game) matrix
+assert r(n_certified_overall)==2
+assert r(n_certified_indep1)==2 & r(n_certified_indep2)==2
+matrix list r(independent_efficiencies)
+matrix list r(weights_intermediate)
+clear
+input double id x z y
+1 1 1 1
+2 1 1 1
+end
+replace x=2^538 in 1
+replace y=2^538 in 2
+dea_network x=y, intermediates(z) method(independent) gen(tiny) matrix
+assert r(n_withheld_overall)==1
+assert missing(tiny_overall) in 1
+assert tiny_stage1>0 & tiny_stage2>0
+matrix list r(score_reason)
+TWOSTAGE_INSTALL_EXAMPLE_END
+
+The exact verification path is bounded to32 DMUs and16 multiplier variables;
+VRS uses two additional intercept variables. Other work/arithmetic limits remain.
+Quality2 means the original stored-double model and exported results passed
+certification. Quality1 is finite but unverified. Quality0 is unavailable;
+quality3 is an overall value withheld after exact composition/export checks.
+Existing status matrices report numeric availability only. These flags do not
+prove mathematical infeasibility. Valid exact zero followers remain zero.
+
+Independent benchmark lambda vectors are separate from linked follower weights.
+native_* matrices preserve the native calculation. On certificate failure the
+native result remains unverified. When both independent stages are certified,
+an aggregate failing export checks is withheld rather than replaced by epsilon.
+See command help for detailed reason codes and stored results.
+
+Portable validation from a clone or extracted ZIP (no source edits required):
+    python tests/run.py --suite twostage_quality --stata /path/to/stata-mp
+    python tests/run.py --suite twostage_models --stata /path/to/stata-mp
+    python tests/run.py --suite twostage_lp --stata /path/to/stata-mp
+Use --output with a new directory outside the package to keep local evidence.
+The runner does not install dependencies, alter user libraries or publish files.

@@ -1,7 +1,7 @@
 {smcl}
 {* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* *! version 1.2.0  02nov2026}{...}
+{* *! version 1.3.0  09nov2026}{...}
 {viewerjumpto "Related article" "dea_network##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_bootstrap" "help dea_bootstrap"}{...}
@@ -235,8 +235,9 @@ Scores are not clipped to [0,1]. Independent output-oriented stages report
 1/phi. A failed stage remains missing while an available stage is retained.
 
 {pstd}
-All models are estimated using the Interior Point Method engine via
-Stata's {cmd:LinearProgram()} class, requiring Stata 16 or later.
+The native calculation uses Stata's {cmd:LinearProgram()} class. The exact
+verification path described below requires the bundled helpers. Stata 16 or
+later is required.
 
 
 {pstd}
@@ -316,6 +317,74 @@ which are then converted into interest income (Stage 2).
 
 {phang2}{cmd:. restore}{p_end}
 {* DEAS_HELP_EXAMPLES_END}{...}
+
+
+{pstd}
+{bf:Numerical quality and retained results.} Native {cmd:LinearProgram()}
+results are checked first. A bounded exact-arithmetic path then verifies the
+model formed from the original stored double data, its optimality certificate,
+and the precision of exported scores and weights or reference coefficients.
+Certification is attempted for at most 32 selected DMUs and 16 multiplier
+variables (including two variables for a VRS intercept). Larger models or
+unsuccessful certification retain the native result and label it unverified;
+this does not prove infeasibility. No tolerance relaxation or score clipping
+is applied. Exact certification concerns the stored binary inputs, not unknown
+unrounded source quantities.
+
+{pstd}
+For independent formulations, certified stage objectives are combined as exact
+fractions before a single conversion to double. If a positive product rounds
+to zero, or the final product/mean fails the requested relative precision,
+the overall score is missing and a warning is printed. Available stage scores
+and reference coefficients are retained. If either stage is unverified, the
+aggregate of the available stage values is retained as unverified. Linked
+relational and noncooperative scores keep their own joint-model verification.
+A genuine certified zero is distinct from a positive value lost at export.
+
+{pstd}
+With {cmd:matrix}, {cmd:r(score_quality)} and {cmd:r(score_reason)} have columns
+overall, stage1, stage2. Quality codes are 0 for unavailable, 1 for finite but
+unverified, 2 for certified with export checks passed, and 3 for an overall
+value withheld after aggregation/export checks. {cmd:r(status)} continues to
+report only numeric availability. Reason 0 means certification succeeded;
+201 and 202 identify the DMU and multiplier-size limits; other stage reasons
+identify model construction, certificate, arithmetic, or export failures.
+Aggregate reason 1001 means at least one stage is unverified, 1002 invalid
+internal composition arguments, 1101 positive underflow, 1102 invalid/range
+export, 1103 insufficient relative precision, and 1200 plus an arithmetic
+error identifies bounded-arithmetic failure. These reasons are not proofs
+that the DEA model has no feasible solution.
+
+{pstd}
+{cmd:r(native_efficiencies)} preserves the checked native scores before exact
+verification. For every nonrelational formulation,
+{cmd:r(independent_efficiencies)}, {cmd:r(independent_quality)}, and
+{cmd:r(independent_reason)} describe the final independent Stage 1 and Stage 2
+benchmarks. {cmd:r(native_independent)}, {cmd:r(native_lambda_stage1)}, and
+{cmd:r(native_lambda_stage2)} preserve their native provenance. The final
+{cmd:r(lambda_stage1)} and {cmd:r(lambda_stage2)} refer to the final independent
+benchmarks; in a noncooperative model they are not the linked follower weights.
+Native and certified reference sets can differ when alternative optima exist.
+
+{pstd}
+For independent formulations, {cmd:r(aggregate_diagnostics)} has columns
+quality, reason, value, rel_error, operations, maxlimbs, arithmetic_error,
+and legacy_value. The last column is the ordinary double aggregate of the
+final stage scores before the exact aggregate check. Withheld values have a
+missing value column. Linked models do not return this matrix.
+
+{pstd}
+The scalars {cmd:r(n_certified_overall)}, {cmd:r(n_certified_stage1)},
+{cmd:r(n_certified_stage2)} and the corresponding {cmd:r(n_unverified_*)}
+count quality 2 and quality 1 results; unavailable results are not counted as
+finite unverified values. {cmd:r(n_withheld_overall)} counts quality 3.
+Nonrelational models also return {cmd:r(n_certified_indep1)},
+{cmd:r(n_certified_indep2)}, {cmd:r(n_unverified_indep1)}, and
+{cmd:r(n_unverified_indep2)}. These counts are available without {cmd:matrix}.
+{cmd:r(quality_policy)} is {cmd:certify_or_retain_unverified};
+{cmd:r(aggregate_policy)} is {cmd:exact_or_withhold}, conditional on both
+independent stages being certified. Internal diagnostics named t120, t121,
+and t122 are private and not a stable interface.
 
 {marker stored_results}{...}
 {title:Stored results}

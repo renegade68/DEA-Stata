@@ -93,7 +93,10 @@ def main():
  assert needle in t
  t=t.replace(needle,'    local audit "${COOPER_TEST_AUDIT}"\n'+needle,1);f.write_text(t)
 
+ attempted=0
  def run(name,body,check=None,source=pkg):
+  nonlocal attempted
+  attempted+=1
   if a.only and not re.search(a.only,name):return
   d=out/name;d.mkdir();head='version 16\nclear all\nset more off\nset type double\nset processors 1\nset linesize 180\n'
   for key in ['PLUS','PERSONAL','SITE','OLDPLACE']:(d/key).mkdir();head+=f'sysdir set {key} "{d/key}"\n'
@@ -157,12 +160,12 @@ def main():
  for command in ['dea x=y,model(congestion)','dea y,inputs(x) model(congestion)','dea_congestion x=y,','dea_congestion,inputs(x) outputs(y)']:
   for short in [False,True]:
    opts='congm(cooper) congw(normalized) congr' if short else 'congmethod(cooper) congweight(normalized) congranges'
-   run('syntax_'+str(len(results)),PAPER+command+' '+opts+' dmu(id) gen(res)\nassert res_status==0\nassert abs(res-.25)<1e-7 in 5\n')
+   run('syntax_'+str(attempted),PAPER+command+' '+opts+' dmu(id) gen(res)\nassert res_status==0\nassert abs(res-.25)<1e-7 in 5\n')
  for invalid in ['congmethod(no)','congmethod(legacy) congranges','congweight(raw)','congmethod(cooper) congweight(no)','congmethod(cooper) stage(1)','congmethod(cooper) ort(input)','congmethod(cooper) fdh','congmethod(cooper) bad(y)','congmethod(cooper) direction(x)','congmethod(cooper) reference','congmethod(cooper) saveref','congmethod(cooper) saveweights','congmethod(cooper) bootstrap','congmethod(cooper) w(x)','congmethod(cooper) radialtolerance(.1)']:
-  run('reject_option_'+str(len(results)),PAPER+unchanged('dea x=y,model(congestion) gen(res) '+invalid,198))
+  run('reject_option_'+str(attempted),PAPER+unchanged('dea x=y,model(congestion) gen(res) '+invalid,198))
  for opt in ['congmethod(cooper)','congweight(raw)','congmatrix','congranges']:run('wrong_model_'+opt.split('(')[0],PAPER+unchanged('dea x=y, '+opt,198))
  for field,value in itertools.product(['x','y'],['0','-1']):run('domain_'+field+value,PAPER+f'replace {field}={value} in 2\ngen str8 res="old"\n'+unchanged('dea_congestion x=y,congm(cooper) gen(res) replacevars',459))
- for opt,rc in [('gen(x) replacevars',110),('gen(id) replacevars dmu(id)',110),('gen(_dmu)',110),('gen(abcdefghijklmnopqrstuvwxyzabc)',7)]:run('collision_'+str(len(results)),PAPER+unchanged('dea_congestion x=y,congm(cooper) '+opt,rc))
+ for opt,rc in [('gen(x) replacevars',110),('gen(id) replacevars dmu(id)',110),('gen(_dmu)',110),('gen(abcdefghijklmnopqrstuvwxyzabc)',7)]:run('collision_'+str(attempted),PAPER+unchanged('dea_congestion x=y,congm(cooper) '+opt,rc))
  for suffix in ['', '_phi','_eff','_total','_technical','_status']:
   run('protect'+suffix,PAPER+f'gen str8 res{suffix}="old"\n'+unchanged('dea_congestion x=y,congm(cooper) gen(res) dmu(id)',110))
  run('sample_missing',PAPER+'gen str3 label=string(id)\nreplace label="" in 2\nreplace x=. in 3\ngen byte selected=inrange(id,2,6)&!missing(x)&label!=""\ndea_congestion x=y if id>=2 in 2/6,congm(cooper) congmat dmu(label) gen(res)\nassert r(N)==3\nmatrix ob=r(obs_index)\nassert ob[1,1]==4 & ob[3,1]==6\nassert missing(res) if !selected\nassert res_status==0 if selected\n')

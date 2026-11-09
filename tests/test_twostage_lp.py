@@ -47,11 +47,22 @@ def main():
    if fault in ['primary','decomp','follower']:
     needle='    weights=J(1,p,.)';cond={'primary':'q==0','decomp':'q==1','follower':'q>=2'}[fault];s=s.replace(needle,needle+'\n    if('+cond+') return(1)')
    else:
-    needle='n=rows(X);m=cols(X);s=cols(Y);lambda=J(1,n,.)';s=s.replace(needle,needle+'\n    st_numscalar("stagecalls",st_numscalar("stagecalls")+1)\n    if(mod(st_numscalar("stagecalls"),2)=='+('1' if fault=='stage1' else '0')+') return(.)')
+    needle='n=rows(X);m=cols(X);s=cols(Y);lambda=J(1,n,.);native=J(1,4,.)';assert needle in s;s=s.replace(needle,needle+'\n    st_numscalar("stagecalls",st_numscalar("stagecalls")+1)\n    if(mod(st_numscalar("stagecalls"),2)=='+('1' if fault=='stage1' else '0')+') {native=(1,0,.,.);return(.);}')
    p.write_text(s)
+  retained=out/('retain_ado_'+fault);shutil.copytree(target,retained)
+  # Deliberately disable certification to retain the historical native failure
+  # checks. A separate run below verifies recovery with certification enabled.
+  for helper in ['_dea_twostage_exact.ado','_dea_stackelberg_exact.ado','_dea_independent_exact.ado']:
+   q=retained/helper;t=q.read_text()
+   if helper=='_dea_independent_exact.ado':
+    point=' if(n<1 | rows(Y)!=n';assert point in t;t=t.replace(point,' return(_t122_stop(R,400))\n'+point,1)
+   else:
+    point='R.weights=J(1,cols(X)+cols(Z)+cols(Y),.)';assert point in t;t=t.replace(point,point+'\n R.diag[21]=400;return(R)',1)
+   q.write_text(t)
   for kind,method,leader in [('network','multiplicative','stage1'),('network','independent','stage1'),('stackelberg','independent','stage1'),('stackelberg','noncooperative','stage1'),('stackelberg','noncooperative','stage2')]:
    rel=kind=='network' and method=='multiplicative';nc=method=='noncooperative'
    body=DATA+f'dea_{kind},inputs(x) intermediates(z1 z2) outputs(y) method({method}) gen(res) matrix detail '+(f'leader({leader})' if kind=='stackelberg' else '')+'\n'
+   recovered=body+'assert r(n_certified_overall)==4\nassert r(n_failed_overall)==0\nassert !missing(res_overall)\nmata: assert(all(st_matrix("r(score_quality)"):==2))\n'
    if fault in ['bound','equality','nonfinite'] or fault=='primary' and rel:
     body+='assert missing(res_overall)\nassert r(n_failed_overall)==4\n'
    elif fault=='decomp' and rel:body+='assert r(n_decomp_fallback)==4\nassert !missing(res_overall)\nmata: assert(all(st_matrix("r(decomposition_status)"):==1))\n'
@@ -65,6 +76,7 @@ def main():
      elif nc:body+='assert missing(res_leader,res_follower,res_overall)\nmata: assert(all(st_matrix("r(follower_status)"):==0))\n'
      else:body+='assert missing(res_overall)\n'
    else:body+='assert !missing(res_overall)\n'
-   run('fault_'+fault+'_'+kind+'_'+method+'_'+leader,body,source=target)
+   run('recover_'+fault+'_'+kind+'_'+method+'_'+leader,recovered,source=target)
+   run('retain_'+fault+'_'+kind+'_'+method+'_'+leader,body,source=retained)
  summary=dict(total=len(rows),passed=sum(r['passed'] for r in rows),failed=sum(not r['passed'] for r in rows),LPs=sum(r.get('lp_checks',0) for r in rows),rejected_feasible=sum(r.get('rejected_feasible',0) for r in rows));(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n');print(summary);return bool(summary['failed'])
 if __name__=='__main__':raise SystemExit(main())

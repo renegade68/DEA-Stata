@@ -1,6 +1,15 @@
-*! version 1.0.0  02nov2026
+*! version 1.1.0  09nov2026
 *! Shared two-stage LP construction; CRS shared weights and independent stages.
 version 16.0
+quietly _dea_crossgame_load
+quietly findfile _dea_twostage_exact.ado
+quietly run "`r(fn)'"
+quietly findfile _dea_stackelberg_exact.ado
+quietly run "`r(fn)'"
+quietly findfile _dea_independent_exact.ado
+quietly run "`r(fn)'"
+quietly findfile _dea_twostage_quality.ado
+quietly run "`r(fn)'"
 capture mata: assert(_dea_nonte_lp_ready()==1)
 if _rc {
     quietly findfile _dea_nonte_lp.ado
@@ -13,19 +22,19 @@ capture mata: mata drop _dea_ts_link()
 capture mata: mata drop _dea_ts_compute()
 mata:
 mata set matastrict on
-real scalar _dea_ts_ready() return(1)
+real scalar _dea_ts_ready() return(12401)
 
 // Independent radial envelopment. No automatic switch to another engine.
 real scalar _dea_ts_stage(real matrix X, real matrix Y, real scalar k,
     string scalar rts, string scalar ort, real scalar tol, real rowvector lambda,
-    real scalar cap)
+    real scalar cap, |real rowvector native)
 {
-    real scalar n,m,s,eff
+    real scalar n,m,s,eff,nrc
     real matrix A,E
     real colvector b,h,scale
     real rowvector c,lb,ub
     class LinearProgram scalar S
-    n=rows(X);m=cols(X);s=cols(Y);lambda=J(1,n,.)
+    n=rows(X);m=cols(X);s=cols(Y);lambda=J(1,n,.);native=J(1,4,.)
     E=J(0,n+1,0);h=J(0,1,0)
     if(rts=="vrs") {E=(J(1,n,1),0);h=1;}
     if(ort=="input") {
@@ -41,11 +50,13 @@ real scalar _dea_ts_stage(real matrix X, real matrix Y, real scalar k,
     S=LinearProgram();S.setMaxOrMin("min");S.setCoefficients(c)
     S.setInequality(A,b);if(rows(E)) S.setEquality(E,h)
     S.setBounds(lb,ub);S.setTrace("off")
-    if(_dea_nonte_optimize(S,tol,cap)) return(.)
+    nrc=_dea_nonte_optimize(S,tol,cap)
+    native=(0,S.converged(),S.errorcode(),S.value())
+    if(nrc) {native[1]=(S.converged() & S.errorcode()==0 ? 2 : 1);return(.);}
     eff=(ort=="input" ? S.value() : -S.value())
-    if(eff>=. | eff<0) return(.)
-    if(ort=="output") {if(eff<=0) return(.);eff=1/eff;}
-    if(eff>1+tol) return(.)
+    if(eff>=. | eff<0) {native[1]=3;return(.);}
+    if(ort=="output") {if(eff<=0) {native[1]=4;return(.);}eff=1/eff;}
+    if(eff>1+tol) {native[1]=5;return(.);}
     lambda=S.parameters();lambda=lambda[1..n]
     return(eff)
 }
@@ -135,20 +146,26 @@ void _dea_ts_compute(string scalar xs,string scalar zs,string scalar ys,
     real scalar tol,real scalar matrices,real scalar detail,real scalar debug,
     string scalar prefix)
 {
-    real matrix X,Z,Y,R,W,L1,L2,B,Status
-    real rowvector sx,sz,sy,w,alt,lam,meta
+    real matrix X,Z,Y,R,W,L1,L2,B,Status,XR,ZR,YR,CW,Q,NQ,I1,I2,NR,NB,NL1,NL2,SQ,SR,IQ,IR,AQ,counts
+    real rowvector sx,sz,sy,w,alt,lam,meta,native1,native2
     real colvector obs,decomp,joint,routes
     string scalar fmt
     string colvector labels
     real scalar n,m,d,s,i,rc,den,mid,num,e1,e2,overall,lead,follow,lw,route
+    struct _T120_Result scalar certified
+    struct _T122_Result scalar ind1,ind2
     X=st_data(.,tokens(xs),touse);Z=st_data(.,tokens(zs),touse);Y=st_data(.,tokens(ys),touse)
     obs=selectindex(st_data(.,touse));n=rows(X);m=cols(X);d=cols(Z);s=cols(Y)
     if(substr(st_vartype(id),1,3)=="str") labels=st_sdata(.,id,touse)
     else labels=strtrim(strofreal(st_data(.,id,touse),"%21.0g"))
     sx=colmax(X);sz=colmax(Z);sy=colmax(Y)
     sx=sx:+(sx:==0);sz=sz:+(sz:==0);sy=sy:+(sy:==0)
+    XR=X;ZR=Z;YR=Y
+    CW=J(n,m+d+s,.);Q=J(n,32,.);NQ=J(n,36,.);I1=I2=J(n,34,.)
     X=X:/sx;Z=Z:/sz;Y=Y:/sy
     R=J(n,3,.);B=J(n,2,.);W=J(n,m+d+s,.);L1=L2=J(n,n,.)
+    NR=J(n,3,.);NB=J(n,2,.);NL1=NL2=J(n,n,.)
+    SQ=SR=J(n,3,0);IQ=IR=J(n,2,0);AQ=J(n,8,.)
     decomp=joint=J(n,1,.);routes=J(n,1,0)
     for(i=1;i<=n;i++) {
         if(mode=="relational") {
@@ -166,10 +183,17 @@ void _dea_ts_compute(string scalar xs,string scalar zs,string scalar ys,
                 if(e2>=0 & e2<=1+tol) R[i,3]=e2
                 W[i,.]=w
             }
+            NR[i,.]=R[i,.]
+            Q[i,1..5]=(i,decomp[i],R[i,.])
+            certified=_t120_rel(XR,ZR,YR,i,tol)
+            Q[i,6..32]=certified.diag
+            if(certified.ok) {R[i,.]=certified.scores;CW[i,.]=certified.weights;decomp[i]=2;}
         }
         else {
-            B[i,1]=_dea_ts_stage(X,Z,i,rts,ort,tol,lam,(mode=="noncooperative" ? 1e-12 : 1e-8));L1[i,.]=lam
-            B[i,2]=_dea_ts_stage(Z,Y,i,rts,ort,tol,lam,(mode=="noncooperative" ? 1e-12 : 1e-8));L2[i,.]=lam
+            B[i,1]=_dea_ts_stage(X,Z,i,rts,ort,tol,lam,(mode=="noncooperative" ? 1e-12 : 1e-8),native1);L1[i,.]=lam
+            B[i,2]=_dea_ts_stage(Z,Y,i,rts,ort,tol,lam,(mode=="noncooperative" ? 1e-12 : 1e-8),native2);L2[i,.]=lam
+            NB[i,.]=B[i,.];NL1[i,.]=L1[i,.];NL2[i,.]=L2[i,.]
+            I1[i,1..7]=(i,1,native1,B[i,1]);I2[i,1..7]=(i,2,native2,B[i,2])
             R[i,2..3]=B[i,.]
             if(mode=="noncooperative") {
                 lead=(leader=="stage1" ? B[i,1] : B[i,2]);follow=.
@@ -189,18 +213,67 @@ void _dea_ts_compute(string scalar xs,string scalar zs,string scalar ys,
                 if(leader=="stage1") R[i,3]=follow
                 else R[i,2]=follow
             }
-            if(!hasmissing(R[i,2..3])) {
+            if(mode=="noncooperative") {
+                NR[i,.]=(R[i,2]*R[i,3],R[i,2..3])
+                NQ[i,1..9]=(i,joint[i],routes[i],NR[i,.],B[i,.],(leader=="stage1" ? 1 : 2))
+                certified=_t121_nc(XR,ZR,YR,i,(leader=="stage1" ? 1 : 2),tol)
+                NQ[i,10..36]=certified.diag
+                if(certified.ok) {R[i,.]=certified.scores;CW[i,.]=certified.weights;joint[i]=2;routes[i]=3;}
+            }
+            // Certify benchmarks after the native linked solve: native leader locks
+            // and noncooperative scores are never replaced by independent scores.
+            ind1=_t122_stage(XR,ZR,i,rts,ort,tol)
+            I1[i,8..34]=ind1.diag
+            if(ind1.ok) {B[i,1]=ind1.score;L1[i,.]=ind1.lambda;}
+            ind2=_t122_stage(ZR,YR,i,rts,ort,tol)
+            I2[i,8..34]=ind2.diag
+            if(ind2.ok) {B[i,2]=ind2.score;L2[i,.]=ind2.lambda;}
+            IQ[i,.]=((ind1.ok ? 2 : B[i,1]<.),(ind2.ok ? 2 : B[i,2]<.))
+            IR[i,.]=(ind1.diag[21],ind2.diag[21])
+            if(mode!="noncooperative") {
+                NR[i,.]=((mode=="mean" ? (NB[i,1]+NB[i,2])/2 : NB[i,1]*NB[i,2]),NB[i,.])
+                R[i,2..3]=B[i,.]
+            }
+            if(!hasmissing(R[i,2..3]) & !(mode=="noncooperative" & NQ[i,10]==1)) {
                 R[i,1]=(mode=="mean" ? (R[i,2]+R[i,3])/2 : R[i,2]*R[i,3])
             }
         }
+        SQ[i,.]=(R[i,.]:<.)
+        if(mode=="relational" | mode=="noncooperative") {
+            if(certified.ok) SQ[i,.]=J(1,3,2)
+            SR[i,.]=J(1,3,certified.diag[21])
+        }
+        else {
+            AQ[i,.]=_t123_aggregate(ind1,ind2,mode,ort,tol,R[i,1])
+            R[i,1]=AQ[i,3];SQ[i,.]=(AQ[i,1],IQ[i,.]);SR[i,.]=(AQ[i,2],IR[i,.])
+        }
         if(debug) printf("  observation %g: overall=%g, stage1=%g, stage2=%g\n",obs[i],R[i,1],R[i,2],R[i,3])
     }
+    if(mode=="relational") {
+        st_matrix(prefix+"_quality",Q)
+        printf("Note: Certified %g of %g relational rows.\n",sum(Q[,6]:==1),n)
+        if(sum(Q[,6]:!=1)) printf("Warning: Relational certification unavailable for %g rows; native values retained as unverified.\n",sum(Q[,6]:!=1))
+    }
+    if(mode=="noncooperative") {
+        st_matrix(prefix+"_ncquality",NQ)
+        printf("Note: Certified %g of %g noncooperative rows.\n",sum(NQ[,10]:==1),n)
+        if(sum(NQ[,10]:!=1)) printf("Warning: Noncooperative certification unavailable for %g rows; native results retained as unverified.\n",sum(NQ[,10]:!=1))
+    }
+    if(mode!="relational") {
+        st_matrix(prefix+"_iq1",I1);st_matrix(prefix+"_iq2",I2)
+        printf("Note: Certified %g of %g independent stage evaluations.\n",sum(I1[,8]:==1)+sum(I2[,8]:==1),2*n)
+        if(sum(I1[,8]:!=1)+sum(I2[,8]:!=1)) printf("Warning: Independent certification unavailable for %g stage evaluations; native results retained as unverified.\n",sum(I1[,8]:!=1)+sum(I2[,8]:!=1))
+    }
+    if(sum(SQ[,1]:==3)) printf("Warning: %g positive overall score(s) withheld after exact aggregation/export checks; inspect score_reason. Certified stages retained.\n",sum(SQ[,1]:==3))
+    counts=(colsum(SQ:==2)\colsum(SQ:==1)\colsum(SQ:==3))
+    st_matrix(prefix+"_counts",counts)
+    st_matrix(prefix+"_icounts",(colsum(IQ:==2)\colsum(IQ:==1)))
     Status=R:<.;lw=10
     for(i=1;i<=n;i++) lw=max((lw,strlen(labels[i])))
     fmt="%"+strofreal(lw)+"s"
-    printf("\n"+fmt+" | %10s %10s %10s\n","DMU","Stage 1","Stage 2","Overall")
+    printf("\n"+fmt+" | %12s %12s %12s\n","DMU","Stage 1","Stage 2","Overall")
     for(i=1;i<=n;i++) {
-        printf(fmt+" | %10.6f %10.6f %10.6f\n",labels[i],R[i,2],R[i,3],R[i,1])
+        printf(fmt+" | %12.6g %12.6g %12.6g\n",labels[i],R[i,2],R[i,3],R[i,1])
         if(detail) {
             printf("  available (overall/stage1/stage2): %g/%g/%g",Status[i,1],Status[i,2],Status[i,3])
             if(mode=="relational") printf("; decomposition=%g",decomp[i])
@@ -224,9 +297,18 @@ void _dea_ts_compute(string scalar xs,string scalar zs,string scalar ys,
     meta=(colsum(R:>=.),sum(decomp:==1),sum(joint:==1),colsum(B:>=.),sum(routes:==2))
     st_matrix(prefix+"_meta",meta)
     if(matrices) {
+        st_matrix(prefix+"_sq",SQ);st_matrix(prefix+"_sr",SR);st_matrix(prefix+"_native",NR)
+        if(mode!="relational") {
+            st_matrix(prefix+"_bench",B);st_matrix(prefix+"_iq",IQ);st_matrix(prefix+"_ir",IR);st_matrix(prefix+"_nb",NB)
+            st_matrix(prefix+"_nl1",NL1);st_matrix(prefix+"_nl2",NL2)
+            if(mode!="noncooperative") st_matrix(prefix+"_aq",AQ)
+        }
         st_matrix(prefix+"_scores",R);st_matrix(prefix+"_status",Status)
         if(mode=="relational" | mode=="noncooperative") {
-            W=W:/(sx,sz,sy);st_matrix(prefix+"_v",W[,1..m]);st_matrix(prefix+"_w",W[,(m+1)..(m+d)]);st_matrix(prefix+"_u",W[,(m+d+1)..(m+d+s)])
+            W=W:/(sx,sz,sy)
+            if(mode=="relational") for(i=1;i<=n;i++) if(Q[i,6]==1) W[i,.]=CW[i,.]
+            if(mode=="noncooperative") for(i=1;i<=n;i++) if(NQ[i,10]==1) W[i,.]=CW[i,.]
+            st_matrix(prefix+"_v",W[,1..m]);st_matrix(prefix+"_w",W[,(m+1)..(m+d)]);st_matrix(prefix+"_u",W[,(m+d+1)..(m+d+s)])
             st_matrix(prefix+"_joint",(mode=="relational" ? decomp : joint))
         }
         if(mode=="noncooperative") st_matrix(prefix+"_route",routes)

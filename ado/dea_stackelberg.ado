@@ -1,4 +1,4 @@
-*! version 1.2.0  02nov2026
+*! version 1.3.0  09nov2026
 *! 2026-11-01: preflight output names; explicit replacevars; protect model data.
 *! dea_stackelberg.ado — Stackelberg Game DEA
 *! Requires: Stata 16+ (LinearProgram)
@@ -81,7 +81,7 @@ program define dea_stackelberg, rclass
         di as error "tolerance() must be positive and finite"
         exit 198
     }
-    capture mata: assert(_dea_ts_ready()==1)
+    capture mata: assert(_dea_ts_ready()==12401 & _t123_ready()==12301 & _t122_ready()==12201 & _t121_ready()==12101 & _t120_ready()==12001 & findexternal("_t120_rel()")!=NULL)
     if _rc {
         quietly findfile _dea_twostage.ado
         quietly run "`r(fn)'"
@@ -132,9 +132,21 @@ program define dea_stackelberg, rclass
     di as text "Leader: `leader'"
     if "`method'"=="independent" di as text "Note: independent stage ordering; leader() changes labels only."
     tempname ts
-    mata: _dea_ts_compute("`inputs'","`intermediates'","`outputs'","`dmu'","`touse'", ///
+    tempname t121context
+    if 1 {
+        mata: `t121context'=_c57_context_save()
+        mata: _dea_rec_abort(); _rsm_audit_reset(0); _rsm_success_reset(1,0); _dea_link_reset(2,0)
+    }
+    capture noisily mata: _dea_ts_compute("`inputs'","`intermediates'","`outputs'","`dmu'","`touse'", ///
         "`generate'","stack","`mode'","`leader'","`rts'","`orientation'",`tolerance', ///
         "`matrix'"!="","`detail'"!="","`debug'"!="","`ts'")
+    local t121rc=_rc
+    if 1 {
+        mata: _c57_context_restore(`t121context')
+        mata: mata drop `t121context'
+    }
+    if `t121rc' exit `t121rc'
+
     return local method "`method'"
     return local rts "`rts'"
     return local orientation "`orientation'"
@@ -149,6 +161,61 @@ program define dea_stackelberg, rclass
     return scalar n_failed_indep1=`ts'_meta[1,6]
     return scalar n_failed_indep2=`ts'_meta[1,7]
     return scalar n_single_link=`ts'_meta[1,8]
+    if "`mode'"=="noncooperative" {
+        mata: st_numscalar("`ts'_ncert",sum(st_matrix("`ts'_ncquality")[.,10]:==1))
+        return scalar t121_n_certified=`ts'_ncert
+        return scalar t121_n_unverified=`n'-`ts'_ncert
+        if "`matrix'"!="" return matrix t121_quality=`ts'_ncquality
+        scalar drop `ts'_ncert
+    }
+    if "`mode'"!="relational" {
+        mata: st_numscalar("`ts'_ncert",sum(st_matrix("`ts'_iq1")[.,8]:==1)+sum(st_matrix("`ts'_iq2")[.,8]:==1))
+        return scalar t122_n_certified=`ts'_ncert
+        return scalar t122_n_unverified=2*`n'-`ts'_ncert
+        if "`matrix'"!="" {
+            return matrix t122_quality1=`ts'_iq1
+            return matrix t122_quality2=`ts'_iq2
+        }
+        scalar drop `ts'_ncert
+    }
+    return local quality_policy "certify_or_retain_unverified"
+    return local aggregate_policy "exact_or_withhold"
+    local j=0
+    foreach component in overall stage1 stage2 {
+        local ++j
+        return scalar n_certified_`component'=`ts'_counts[1,`j']
+        return scalar n_unverified_`component'=`ts'_counts[2,`j']
+    }
+    return scalar n_withheld_overall=`ts'_counts[3,1]
+    if "`mode'"!="relational" {
+        forvalues j=1/2 {
+            return scalar n_certified_indep`j'=`ts'_icounts[1,`j']
+            return scalar n_unverified_indep`j'=`ts'_icounts[2,`j']
+        }
+    }
+    if "`matrix'"!="" {
+        foreach part in sq sr native {
+            matrix colnames `ts'_`part'=overall stage1 stage2
+        }
+        return matrix score_quality=`ts'_sq
+        return matrix score_reason=`ts'_sr
+        return matrix native_efficiencies=`ts'_native
+        if "`mode'"!="relational" {
+            foreach part in iq ir nb bench {
+                matrix colnames `ts'_`part'=stage1 stage2
+            }
+            return matrix independent_efficiencies=`ts'_bench
+            return matrix independent_quality=`ts'_iq
+            return matrix independent_reason=`ts'_ir
+            return matrix native_independent=`ts'_nb
+            return matrix native_lambda_stage1=`ts'_nl1
+            return matrix native_lambda_stage2=`ts'_nl2
+            if "`mode'"!="noncooperative" {
+                matrix colnames `ts'_aq=quality reason value rel_error operations maxlimbs arithmetic_error legacy_value
+                return matrix aggregate_diagnostics=`ts'_aq
+            }
+        }
+    }
     if "`matrix'"!="" {
         matrix colnames `ts'_scores=overall stage1 stage2
         matrix colnames `ts'_status=overall stage1 stage2
@@ -172,7 +239,7 @@ program define dea_stackelberg, rclass
             return matrix lambda_stage2=`ts'_l2
         }
     }
-    foreach suffix in meta scores status v w u joint l1 l2 route {
+    foreach suffix in counts icounts sq sr native iq ir nb nl1 nl2 aq bench iq1 iq2 meta scores status v w u joint l1 l2 route ncquality {
         capture matrix drop `ts'_`suffix'
     }
 end
