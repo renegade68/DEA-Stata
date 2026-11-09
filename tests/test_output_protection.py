@@ -194,16 +194,16 @@ def twostage_historical_check(key, outputs, path):
 
 
 def games_historical_check(key, outputs, path):
-    # Same characteristic/allocation rule; normalization and explicit LP bounds
-    # change numerical last bits, and additive Shapley removes summation noise.
+    # Historical numerical proximity only. Exact original-data values and ranks
+    # have separate Fraction witnesses in cooperative_nash and games_quality.
     names=[v for v in outputs if not v.endswith('_rank')]
-    text='mata: game_current=st_data(.,tokens("'+' '.join(names)+'"))\npreserve\n'
+    text='assert r(n_certified)==_N\n'+('assert r(rank_quality)==2\n' if key=='cooperative' else 'assert r(allocation_quality)==2\n')+'mata: game_current=st_data(.,tokens("'+' '.join(names)+'"))\npreserve\n'
     text+=f'use "{path}",clear\n'
     text+='mata: assert(!hasmissing(game_current) & max(abs(game_current-st_data(.,tokens("'+' '.join(names)+'"))))<1e-6)\nrestore\n'
     if key=='cooperative':
         text+='assert res_indiv==res_shapley & res_contrib==0\n'
-        text+='mata: v=st_data(.,"res_shapley"); assert(all(st_data(.,"res_rank"):==_dea_games_rank(v)))\n'
-    else:text+='assert res_gain==res_bargain-res_disagree & res_gain>=0\n'
+        text+='assert res_rank>=1 & res_rank<=_N & res_rank==floor(res_rank)\n'
+    else:text+='assert abs(res_gain-(res_bargain-res_disagree))<2e-15 & res_gain>=0\n'
     return text+'assert note=="keep me"\n'
 
 

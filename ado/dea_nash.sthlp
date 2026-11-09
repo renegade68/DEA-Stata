@@ -1,7 +1,7 @@
 {smcl}
 {* Help revision 2026-11-01: validate output names and require replacevars for existing results.}{...}
 {* Help revision 2026-10-22.3: dea journal attribution and software-version notice added.}{...}
-{* version 1.2.0  02nov2026}{...}
+{* version 1.3.0  09nov2026}{...}
 {viewerjumpto "Related article" "dea_nash##publication"}{...}
 {vieweralsosee "dea" "help dea"}{...}
 {vieweralsosee "dea_cooperative" "help dea_cooperative"}{...}
@@ -69,8 +69,10 @@ name and existing output suffixes are retained for compatibility.
 {pstd}
 The exact implemented rule is as follows. Let d_i be the input-oriented DEA
 score. Define the scenario c_i = d_i/(0.8+0.2*d_i), except c_i=1 when
-{cmd:d_i>=1-tolerance}. The constants 0.2 and 0.01 below are historical choices,
-not parameters estimated from the data. Compute:
+{cmd:d_i>=1-tolerance}. On the certified path the historical constants 0.2 and 0.01 are interpreted as
+exact 1/5 and 1/100 (and 0.8 as 4/5); the threshold is exactly 1 minus the stored
+tolerance. They are not parameters estimated from the data. The unverified
+numerical path retains the historical binary64 formula. Compute:
 
 {p 8 8 2}
 G = sum_i(c_i-d_i), w_i = max(0.01,1-d_i),
@@ -81,10 +83,13 @@ These inefficiency-dependent weights are unequal in general. The cap may discard
 part of G, including the positive share assigned to an efficient DMU by the
 0.01 weight floor. The discarded gain is not redistributed: it is reported in
 {cmd:r(unallocated_gain)} = G - sum_i(g_i). This preserves the historical rule
-while exposing its limitation. Floating-point summation may leave a tiny signed
-roundoff residual even when no cap binds. The scenario is not an individual
-upper bound on the allocation. The final gain is {cmd:bargain-disagree}, not
-{cmd:coop-disagree}.
+while exposing its limitation. The exact calculation has zero unallocated gain when no cap binds.
+The unverified numerical calculation can retain a small signed roundoff residual. The scenario is not an individual
+upper bound on the allocation. The gain is the exact allocation-minus-disagreement difference exported
+separately: subtracting the two rounded generated columns need not reproduce a
+small positive gain. If some scores are unverified, allocation uses the historical
+rounded-score formula and is quality 1; certified individual scenarios remain
+available independently.
 
 {pstd}
 If any DEA score is unavailable, that row's scenario is missing and all
@@ -96,8 +101,13 @@ reduced for allocation. {cmd:r(allocation_complete)} is then zero.
 {cmd:r(nash_product)} is the unweighted product of the computed gains, not an
 optimized objective. If any gain is exactly zero, the product is zero,
 {cmd:r(n_zero_gain)}>0, and {cmd:r(log_product)} is missing (log zero).
-Otherwise {cmd:r(log_product)} stores sum(log(g_i)); if exponentiation
-underflows, the product is zero and {cmd:r(product_underflow)} is one.
+Otherwise {cmd:r(log_product)} stores a numerical sum of logarithms of the
+exact positive gains on the certified path. The exact product is exported
+separately. If it rounds to zero, the certified product is withheld (missing),
+its reason is 1101, and {cmd:r(product_underflow)} is one. An inaccurate nonzero
+subnormal export is also withheld (reason 1103). A finite numerical log may
+remain available. The unverified numerical path retains its historical
+underflow-to-zero behavior, tagged quality 1.
 Near-efficient scores slightly below one can produce very small positive gains
 and products. A nonzero product does not establish a Nash solution.
 
@@ -118,29 +128,109 @@ input/output row return {cmd:r(459)} before replacement. Missing quantities or a
 missing explicit numeric/string DMU identifier exclude that observation.
 An empty sample returns {cmd:r(2000)}. Results are missing outside the sample.
 
-{pstd}
-{opt tol:erance(#)} must be positive and finite. Columns are scaled by their
-positive maxima. Each unchanged, equivalent LP is checked for convergence,
-finite values and normalized primal residuals against
-{cmd:min(tolerance,1e-8)}, matching the numerical endpoint envelope. The native
-convergence tolerance uses the same cap; a stricter requested tolerance is honored.
-A converged but rejected candidate may receive one stricter restart of the same
-LP. Rejection means unavailable, not a proof that the model is infeasible.
-The self-reference implies 0 <= efficiency <= 1. The LP includes this upper
-bound. An accepted score just outside this interval by at most
-{cmd:min(tolerance,1e-8)} is moved to the endpoint; the raw score and this
-adjustment are retained in {cmd:r(lp_diagnostics)}. Larger excursions are
-rejected. Scores already inside the interval are unchanged, including values
-slightly below 1. Primal checks alone do not certify optimality.
+
+{marker quality}{...}
+{title:Numerical quality and bounded exact verification}
 
 {pstd}
-{opt mat:rix} returns {cmd:r(results)} (the four generated columns in the order
-listed below) and {cmd:r(lp_diagnostics)} with columns {cmd:raw_score score
-accepted endpoint_adjusted}. Rows follow selected observation order, not unique
-DMU labels; identifiers may repeat. The raw score is available only when the LP
-passed its convergence and residual checks. Matrix results are subject to
-Stata's matrix size limits. {opt debug} displays per-row LP acceptance and
-endpoint adjustments.
+The native LP path first scales columns and checks convergence and primal
+residuals, using min(tolerance,1e-8) and at most one stricter restart. Independently,
+a bounded rational path verifies the original stored input/output data using
+primal and dual certificates. Its scope is n<=32 and
+inputs+outputs+2*(rts==vrs)<=16. Scope, work, and representation limits can prevent
+certification; a native failure is not a proof of model infeasibility.
+No rounding of the original data or change of the economic model is authorized
+by these checks. Each stored binary64 input and the requested tolerance are
+interpreted exactly; this does not recover an unrecorded decimal measurement.
+
+{pstd}
+An available certified score replaces the native proposal. Otherwise an accepted
+native score remains available but is explicitly unverified. Missing native
+scores remain missing if certification cannot recover them. {cmd:r(complete)}
+means that every individual score is available, not that all outputs are certified.
+{cmd:r(n_certified)}, {cmd:r(n_unverified)}, and {cmd:r(n_unavailable)} count these
+three score states. {cmd:r(n_native_failed)} and {cmd:r(n_native_boundary)} preserve
+the native diagnostics; {cmd:r(n_failed)} and {cmd:r(n_boundary)} describe the
+scores actually used. {cmd:r(n_lp)} counts initial native LP calls, not all exact
+verification work or numerical restart attempts.
+
+{pstd}
+With {cmd:matrix}, {cmd:r(result_quality)} and {cmd:r(result_reason)} have the same
+four columns as {cmd:r(results)}. Quality codes are 0=unavailable,
+1=numerical/unverified, 2=exact expression with checked binary64 export,
+3=withheld after an arithmetic or export check. Quality 2 does not mean that a
+non-dyadic rational is stored without rounding: its relative export error is
+checked against {cmd:tolerance}. Logarithms remain numerical (quality 1).
+Derived reasons are 0=passed, 1001=unverified or unavailable source,
+1004=log of an exactly zero product, 1005=numerical logarithm,
+1101=positive exact value rounded to zero, 1102=invalid/nonfinite export,
+1103=relative export error above tolerance, and 1201--1204=bounded-arithmetic
+failure. Score-certification reasons are separate internal diagnostic codes.
+A withheld output is missing and triggers a warning; other valid outputs remain.
+Exactly zero and an unrepresentable positive value are distinguished.
+
+{pstd}
+{cmd:r(aggregate_diagnostics)} contains columns
+{cmd:quality reason value relative_error export_ops max_limbs}.
+The work columns describe export checking, or the failing arithmetic stage;
+they are not the command's total work. Each aggregate also has scalar returns
+{it:name}{cmd:_quality} and {it:name}{cmd:_reason}, available without {cmd:matrix}.
+{cmd:r(n_withheld_results)} counts withheld result cells and
+{cmd:r(n_withheld_aggregates)} counts withheld aggregate rows.
+Arithmetic is bounded to 10 million charged operations and 512 base-2^26 limbs
+per work context. Nash uses separate bounded contexts for each scenario/term row,
+each allocation row, the total, the weight sum, their common ratio, cap-loss sum,
+allocated total/mean, and product. Summation uses a balanced tree within its
+context. Each export/log check also has its own context. No failed context is
+retried with a larger budget. With n<=32, the derived Nash path uses at most
+6*n+11 such contexts, including exports/logs; this bound excludes the independent
+DEA-score verification work. A cooperative listing shares one context across
+all coalition sums; the grand total has a separate context. Limits can still
+withhold results inside the dimension limits.
+
+{pstd}
+The exact Nash calculation forms the common ratio once, and uses
+allocated total = scenario gain - sum of exact cap losses. This is algebraically
+the same capped proportional rule. Exact division checks the integer remainder
+and reconstructs dividend = quotient * divisor; at the integer width boundary
+it retains bounded aligned binary division. If a row fails, previously checked
+rows remain available, while dependent full-sample aggregates and zero/cap counts
+are withheld. An available scenario gain is retained. Failure of cap-loss or
+mean aggregation does not erase valid rows or an independently computed product.
+There is no switch to unverified rounded results after an exact-derived failure.
+
+{pstd}
+{cmd:r(lp_diagnostics)} retains columns {cmd:raw_score score accepted
+endpoint_adjusted} for the score used. In a certified row both score columns
+contain the certified export and endpoint_adjusted is zero; the original native
+proposal is instead in {cmd:r(native_lp_diagnostics)}, with the same four columns.
+The word raw in the compatibility matrix must not be read as native in a
+certified row. {cmd:r(score_diagnostics)} has 36 columns: selected row index;
+native failure site (0=accepted, 1=native optimizer, 2=converged but failed
+numerical checks, 3=endpoint rejection);
+native converged, error, value; native accepted score; final quality, reason,
+score; and 27 internal certificate diagnostics. Rows follow selected observation
+order, not distinct DMU labels. {cmd:r(lambda)} and {cmd:r(weights)} are returned
+when at least one row is certified; uncertified rows are missing. Lambda columns
+refer to selected reference rows. Weights contain input multipliers, output
+multipliers, and (under VRS) the two nonnegative components of the free intercept.
+
+{pstd}
+{cmd:r(numerical_results)} and {cmd:r(numerical_aggregates)} retain the old
+floating-point derived calculations on the final rounded scores for comparison;
+they are not certificates or additional estimates. Matrix outputs remain subject
+to Stata's matrix-size limits. Generated variables are binary64 values.
+
+
+{pstd}
+The six aggregate rows are total_gain, allocated_gain, unallocated_gain,
+mean_gain, nash_product, log_product. {cmd:r(allocation_complete)} requires all
+four result columns and the first four gain aggregates to be available; a
+withheld product or undefined log alone does not make an allocation incomplete.
+{cmd:r(allocation_quality)} is 0=incomplete, 1=numerical, 2=fully certified rows and
+first four aggregates, or 3=withheld allocation/scenario/gain fields.
+Nash does not rank or list coalitions: rank_quality/rank_reason and the four
+coalition counters are zero.
 
 {marker options}{...}
 {title:Options}
@@ -172,12 +262,12 @@ The following variables are created:
 {synopt:{cmd:r(mean_gain)}}mean allocated gain{p_end}
 {synopt:{cmd:r(total_gain)}}scenario gain G{p_end}
 {synopt:{cmd:r(allocated_gain)}}sum of final gains{p_end}
-{synopt:{cmd:r(unallocated_gain)}}G minus allocated gains; cap shortfall plus roundoff{p_end}
+{synopt:{cmd:r(unallocated_gain)}}G minus allocated gains; cap shortfall (plus roundoff on the numerical path){p_end}
 {synopt:{cmd:r(log_product)}}sum of log gains if every gain is positive{p_end}
 {synopt:{cmd:r(n_zero_gain)}}number of exactly zero gains{p_end}
 {synopt:{cmd:r(n_capped)}}number with proposed d_i+q_i > 1{p_end}
 {synopt:{cmd:r(product_underflow)}}1 if positive-gain product underflowed, otherwise 0{p_end}
-{synopt:{cmd:r(allocation_complete)}}1 for a complete allocation, 0 if any score unavailable{p_end}
+{synopt:{cmd:r(allocation_complete)}}1 when all four result columns and first four gain aggregates are available{p_end}
 
 {synopt:{cmd:r(n_lp)}}number of initial DEA LP calls (n); a residual-check restart is not another DMU{p_end}
 {synopt:{cmd:r(n_failed)}}number of unavailable individual DEA scores{p_end}
@@ -193,7 +283,7 @@ The following variables are created:
 
 {p2col 5 20 24 2: Matrices (with matrix)}{p_end}
 {synopt:{cmd:r(results)}}four result columns, with {cmd:matrix}{p_end}
-{synopt:{cmd:r(lp_diagnostics)}}raw/used score, acceptance and endpoint adjustment, with {cmd:matrix}{p_end}
+{synopt:{cmd:r(lp_diagnostics)}}used-score diagnostic matrix; see numerical quality{p_end}
 
 
 {pstd}
@@ -254,7 +344,9 @@ The block restores the data in memory. Run dependent lines in order.{p_end}
 
 {pstd}Inspect gain allocation and LP diagnostics{p_end}
 {phang2}{cmd:. dea_nash budget staff=output, dmu(agency) gen(audit) matrix}{p_end}
-{phang2}{cmd:. assert audit_gain==audit_bargain-audit_disagree}{p_end}
+{phang2}{cmd:. assert audit_gain>=0 if !missing(audit_gain)}{p_end}
+{phang2}{cmd:. matrix list r(result_quality)}{p_end}
+{phang2}{cmd:. matrix list r(aggregate_diagnostics)}{p_end}
 {phang2}{cmd:. display r(total_gain) " " r(allocated_gain) " " r(unallocated_gain)}{p_end}
 {phang2}{cmd:. matrix list r(lp_diagnostics)}{p_end}
 {phang2}{cmd:. restore}{p_end}

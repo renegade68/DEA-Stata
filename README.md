@@ -70,7 +70,7 @@ Automatic helper loading and temporary outputs preserve existing result columns
 on compute errors. See [installation and verification](INSTALL_CROSSGAME.txt) and
 [the recovery test contract](tests/CROSSGAME_RECOVERY.txt).
 
-Install the complete matched 87-file `ado/` directory; see
+Install the complete matched 90-file `ado/` directory; see
 [the cross-efficiency installation guide](INSTALL_CROSSEFF.txt).
 
 Package update (`dea` 2.0.73): the explicit Cooper simplex path now uses
@@ -767,22 +767,36 @@ scores missing. Check `r(formulation)`, failure counts and `r(follower_status)`;
 VRS noncooperative optimization is not yet supported.
 
 
-`dea_cooperative` and `dea_nash` (1.2.0) share validated input-oriented DEA
-scores for CRS/VRS, with column scaling, explicit missing-score diagnostics,
-and optional `matrix` results. `dea_cooperative` preserves its fixed-frontier
-characteristic function `v(S)=sum(e_i)`: exact Shapley values equal individual
-scores and contributions are zero. It needs n initial LPs and no longer rejects
-n>20; `detail` skips coalition enumeration for n>15. With incomplete scores,
-the grand total and complete-sample ranks are missing.
+`dea_cooperative` and `dea_nash` (1.3.0) share input-oriented CRS/VRS DEA
+scores with bounded exact certification against the original binary64 inputs.
+Successful original-data certificates replace the numerical score; native LP
+status is retained separately. Certification currently covers n<=32 and
+inputs+outputs+2*(VRS)<=16. Outside this scope, an available native estimate is
+labelled unverified. Read `r(score_diagnostics)` and the quality/reason fields;
+a returned number alone is not evidence of certification.
+
+`dea_cooperative` retains the fixed-frontier characteristic function
+`v(S)=sum(e_i)`: Shapley values equal individual efficiencies and contributions
+are zero. Exact score fractions determine ranks and totals, even when different
+scores round to the same exported double. `detail` skips enumeration for n>15.
 
 `dea_nash` retains the historical scenario transform and capped proportional
-allocation. It does not implement a Nash-product optimizer or centralized DEA.
-The cap's unallocated gain, zero-gain count, log product and numerical underflow
-are reported explicitly. An unavailable DEA score prevents full-sample
-allocation; it is never treated as efficiency one. See both help files for
-formulas, numerical endpoint adjustments, `matrix` results and limitations.
-A substantive pooling game or formal feasible-set Nash model requires a
-separate method choice and implementation.
+allocation. It is not a Nash-product optimizer or a centralized DEA model.
+Certified fractions feed the scenario, gain and allocation formulas directly.
+In particular, gain is exported from its exact expression: it can be positive
+even when exported bargain and disagreement scores round to the same double.
+Per-context arithmetic limits and export precision checks may withhold a derived
+field without discarding independently certified scores or other valid fields.
+A missing input score prevents complete allocation. Read `r(result_quality)`,
+`r(result_reason)` and `r(aggregate_diagnostics)` with the result matrices.
+The logarithmic product is a numerical diagnostic, not a rational certificate.
+
+Install the complete matched folder, including `_dea_games_load.ado`,
+`_dea_games_exact.ado` and `_dea_games_quality.ado`. See
+[game installation and verification](INSTALL_GAMES.txt),
+[portable test contracts](tests/GAMES_QUALITY.txt), and both help files for
+formulas, arithmetic/export limits and precise quality codes. A substantive
+pooling game or formal feasible-set Nash model requires a separate method choice.
 
 
 `dea_fuzzy` 1.1.0 preserves the triangular Kao-Liu best/worst alpha-cut model.

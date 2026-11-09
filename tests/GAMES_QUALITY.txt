@@ -1,0 +1,49 @@
+Portable cooperative/Nash regression contracts
+
+Run from a Git checkout or extracted source package. Keep output outside the
+package in a new directory. tests/run.py accepts --stata, --output, --suite and
+--only; executable discovery can also use DEA_STATA. It never downloads software.
+The documented --rscript comparison requires an already installed Benchmarking.
+All generated data and logs belong to the caller's output, not the public source.
+
+cooperative_nash retains the 540-profile grid (five input/output shapes, nine
+data variants, two commands, two RTS settings and three tolerances), 180 actual
+native LP captures, sample/syntax contracts, native fault injections and the
+original numerical allocation helper's boundary tests. Native diagnostics are
+checked separately from the final certified solution. A successful recovery
+must not be reported as a successful native solve.
+
+fixtures/games_bases.json holds 45 small synthetic binary64 datasets and 530
+basis witnesses for 90 LP profiles. It contains no expected efficiency table.
+games_witness.py reconstructs both primal and dual solutions with Fraction
+Gaussian elimination; it verifies exact feasibility, signs, complementarity,
+strong duality and envelopment inequalities before deriving an answer. A basis
+hint from the solver is not trusted without this independent proof. Input bytes
+must match the original rationals. The grid uses input double with 17-digit
+literals to avoid CSV parser differences; CSVs are retained for optional R.
+Alternate optimal bases/weights need not match: exported primal/dual points
+must satisfy the original model and the verified optimum at the requested
+scaled residual tolerance. Exact ranks are not recomputed from rounded scores.
+The additive characteristic function is also enumerated for the small samples.
+
+Nash derived fields use independent exact fractions with historical constants
+1/5 and 1/100, threshold 1-tol (tol is its binary64 value), capped allocations,
+zero/cap counts and product. Each represented output is compared with its own
+rational expression, not subtraction of other rounded outputs. Log products
+are compared with 90-digit Decimal logarithms as numerical diagnostics only.
+
+Additional games_quality tests cover near-one positive gains, rounded-score
+rank collisions, row reversal and exact dyadic unit changes, increasing sample
+sizes through 32, n/column scope boundaries, strict export precision, exact and
+inexact subnormals, product/gain underflow, isolated arithmetic/export faults,
+partial-row withholding, complete unavailability, missing dependencies before
+replacevars and repeated helper reloads. Synthetic efficiency-fraction tests
+exercise the derived formula in isolation and are not presented as observed
+all-inefficient DEA samples. Mutations affect only temporary copied packages.
+Failures must not become certified through numerical fallback or relaxed tol.
+
+This finite regression collection is not a proof that every sample is solvable,
+that every bounded rational calculation completes, or that native Stata IPM is
+fixed. Runtime cost varies with rational expression size. Exact certification
+covers the supplied binary64 data, not unknown values before measurement or
+rounding. Quality/reason codes and warnings remain part of the public contract.

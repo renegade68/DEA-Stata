@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Additive Shapley / historical allocation conventions, independent DEA duals,
-actual LP capture, sample contracts and forced-failure propagation. Stata 16+,
+actual native LP capture, original-data exact certificates and failure recovery. Stata 16+,
 NumPy/SciPy; optional Benchmarking reference. No general Nash optimizer claim.
 """
 from _support import package_files
+from games_witness import check_input,check_derived,check_scores,capture_results,input_data
 from pathlib import Path
 import argparse,hashlib,itertools,json,math,re,shutil,subprocess,time
 import numpy as np
@@ -49,39 +50,17 @@ def dual_score(x,y,k,rts):
 
 
 def verify(d,m,s,mode,tol):
- a=readbin(d/'data.bin');x=a[:,1:1+m];y=a[:,1+m:];x=x/np.where(x.max(0)==0,1,x.max(0));y=y/np.where(y.max(0)==0,1,y.max(0));n=len(a)
- R=readbin(d/'results.bin');D=readbin(d/'lp_diagnostics.bin');M=readbin(d/'meta.bin').ravel();rts=(d/'rts.txt').read_text()
- want=np.array([dual_score(x,y,i,rts) for i in range(n)])
- good=np.isfinite(D[:,1]);gap=np.max(abs(D[good,1]-want[good]),initial=0);assert gap<3e-6,(gap,R,want)
- assert np.array_equal(good,D[:,2]==1);assert np.array_equal(R[:,0],D[:,1],equal_nan=True)
- assert M[0]==M[1]==n and M[2]==sum(~good) and M[3]==sum(D[:,3]) and M[4]==good.all() and M[5]==tol
- assert np.all((D[good,1]>=0)&(D[good,1]<=1))
- assert np.array_equal(D[good,3],D[good,0]!=D[good,1]);assert np.max(abs(D[good,0]-D[good,1]),initial=0)<=min(tol,1e-8)
- e=R[:,0];shapley_checks=0
- if mode=='cooperative':
-  assert np.array_equal(R[:,0],R[:,1],equal_nan=True);assert np.all(R[good,2]==0) and np.isnan(R[~good,2]).all()
-  if good.all():
-   assert abs(M[6]-sum(e))<1e-13;assert np.array_equal(R[:,3],1+(e[:,None]<e[None,:]).sum(1))
-   # Independently enumerate the original characteristic function, not e_i directly.
-   v=np.array([sum(e[j] for j in range(n) if k&(1<<j)) for k in range(1<<n)])
-   val=np.zeros(n)
-   for i in range(n):
-    for k in range(1<<n):
-     if not k&(1<<i):
-      t=k.bit_count();val[i]+=math.factorial(t)*math.factorial(n-t-1)/math.factorial(n)*(v[k|(1<<i)]-v[k])
-   assert np.max(abs(val-R[:,1]))<2e-14;shapley_checks=n
-  else:assert np.isnan(M[6]) and np.isnan(R[:,3]).all()
- else:
-  c=np.where(e>=1-tol,1,e/(.8+.2*e));assert np.allclose(c,R[:,1],atol=2e-15,rtol=0,equal_nan=True)
-  if good.all():
-   G=sum(c-e);w=np.maximum(.01,1-e);raw=G*w/sum(w);b=np.minimum(1,e+raw);g=b-e
-   assert np.allclose(R[:,2],b,atol=3e-15,rtol=0);assert np.array_equal(R[:,3],R[:,2]-e)
-   assert np.all(R[:,3]>=0);assert np.allclose(M[6:10],[G,sum(g),G-sum(g),np.mean(g)],atol=4e-15,rtol=0)
-   assert M[12]==sum(g==0) and M[13]==sum(e+raw>1) and M[15]==1
-   if np.any(g==0):assert M[10]==0 and np.isnan(M[11]) and M[14]==0
-   else:assert abs(M[11]-sum(np.log(g)))<1e-11 and abs(M[10]-np.exp(M[11]))<1e-15
-  else:assert np.isnan(R[:,2:]).all() and np.isnan(M[6:15]).all() and M[15]==0
- return dict(independent_dual_LPs=n,max_score_gap=float(gap),unavailable=int(sum(~good)),additive_shapley_values=shapley_checks)
+ a=readbin(d/'data.bin');rts=(d/'rts.txt').read_text()
+ key=d.name.split('_'+mode+'_')[0]+'_'+rts
+ truth=check_input(key,a)
+ certified=check_scores(d,truth,m,s,rts,tol)
+ # Native numerical answers remain a separate diagnostic, independently checked
+ # against the same HiGHS dual used before exact recovery was introduced.
+ x=a[:,1:1+m];y=a[:,1+m:];x=x/np.where(x.max(0)==0,1,x.max(0));y=y/np.where(y.max(0)==0,1,y.max(0))
+ want=np.array([dual_score(x,y,i,rts) for i in range(len(a))]);N=readbin(d/'native_lp.bin');good=np.isfinite(N[:,1]);gap=np.max(abs(N[good,1]-want[good]),initial=0)
+ assert gap<3e-6
+ return dict(**certified,**check_derived(d,truth,mode,tol),independent_dual_LPs=len(a),native_max_score_gap=float(gap))
+
 
 def verify_lp(d,tol):
  # Self reference provides an explicit witness even when a presolver declares
@@ -151,9 +130,8 @@ def main():
    z,cols=fixture(m,s,var);key=f'{m}{s}_{var}';f=out/('data_'+key+'.csv');np.savetxt(f,z,delimiter=',',header=','.join(cols),comments='',fmt='%.17g');specs.append((key,m,s,f))
    xs=' '.join(c for c in cols if c.startswith('x'));ys=' '.join(c for c in cols if c.startswith('y'))
    for mode,rts,tol in itertools.product(SUFFIX,['crs','vrs'],['1e-6','1e-8','1e-10']):
-    body=f'import delimited using "{f}",clear asdouble\ndea_{mode} {xs}={ys} if selected, dmu(id) rts({rts}) tol({tol}) gen(res) matrix detail debug\n'
-    body+='matrix meta=('+','.join('r('+k+')' for k in COMMON+SPEC[mode])+')\nmata: savebin("meta.bin",st_matrix("meta"))\n'
-    for mat in ['results','lp_diagnostics']:body+=f'mata: savebin("{mat}.bin",st_matrix("r({mat})"))\n'
+    body=input_data(z,cols)+f'dea_{mode} {xs}={ys} if selected, dmu(id) rts({rts}) tol({tol}) gen(res) matrix detail debug\n'
+    body+=capture_results(mode)
     body+='foreach v of varlist res_* {\nassert missing(`v\') if !selected\n}\nkeep if selected\n'
     body+=f'mata: savebin("data.bin",st_data(.,tokens("id {xs} {ys}")))\n'
     body+=f'file open rr using rts.txt,write\nfile write rr "{rts}"\nfile close rr\n'
@@ -193,14 +171,16 @@ def main():
    p.write_text(s)
   for mode in SUFFIX:
    b=DATA+f'dea_{mode} x=y,gen(res) matrix detail tol(1e-7)\n'
-   if fault in ['above','below']:
-    b+='assert r(n_boundary)==3 & r(n_failed)==0\nassert res_'+SUFFIX[mode].split()[0]+'=='+('1' if fault=='above' else '0')+'\n'
-   else:
-    b+=f'assert r(n_failed)=={1 if fault=="first" else 3} & r(complete)==0\n'
-    if mode=='cooperative':b+='assert missing(r(v_grand))\nassert missing(res_rank)\nassert missing(res_shapley,res_contrib) in 1\n'
-    else:b+='assert missing(res_coop) in 1\nassert missing(res_bargain,res_gain)\nassert missing(r(mean_gain),r(nash_product),r(total_gain))\nassert r(allocation_complete)==0\n'
+   # Damage only the native path. The independent certificate must recover
+   # the original solution; retain the native failure/boundary count separately.
+   b+='assert r(n_certified)==3 & r(n_failed)==0 & r(complete)==1\n'
+   b+='assert r(n_native_boundary)=='+('3' if fault in ['above','below'] else '0')+'\n'
+   b+='assert r(n_native_failed)=='+('0' if fault in ['above','below'] else '1' if fault=='first' else '3')+'\n'
+   b+='assert res_'+SUFFIX[mode].split()[0]+'==1/x\n'
+   if mode=='cooperative':b+='assert res_rank==_n & res_contrib==0 & r(rank_quality)==2\n'
+   else:b+='assert r(allocation_quality)==2 & r(allocation_complete)==1 & res_gain>=0\n'
    run('fault_'+fault+'_'+mode,b,source=target)
- pure='quietly run "'+str(pkg/'_dea_games.ado')+'"\nmata:\n'
+ pure='quietly _dea_games_load\nmata:\n'
  pure+='m=J(1,10,.);R=_dea_games_allocate((1\\.5\\.25),1e-7,m)\nassert(m[3]>0 & m[8]==1 & m[5]==0 & m[7]==1 & m[6]>=.)\nassert(R[1,4]==0 & all(R[,4]:>=0))\n'
  pure+='R=_dea_games_allocate(J(1000,1,.5),1e-7,m)\nassert(m[5]==0 & m[9]==1 & m[7]==0 & m[6]<-1000)\n'
  pure+='R=_dea_games_allocate((.a\\.5),1e-7,m)\nassert(R[1,2]>=. & all(R[,3..4]:>=.) & m[10]==0 & m[5]>=.)\n'

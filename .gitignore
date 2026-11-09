@@ -327,3 +327,13 @@
 !/tests/fixtures/twostage_bases.json
 !/tests/test_twostage_quality.py
 !/tests/twostage_witness.py
+
+# Matched cooperative/Nash helpers, exact witnesses and portable checks.
+!/INSTALL_GAMES.txt
+!/ado/_dea_games_exact.ado
+!/ado/_dea_games_load.ado
+!/ado/_dea_games_quality.ado
+!/tests/GAMES_QUALITY.txt
+!/tests/fixtures/games_bases.json
+!/tests/games_witness.py
+!/tests/test_games_quality.py

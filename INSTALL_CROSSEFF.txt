@@ -132,7 +132,7 @@ rounded or loses terms; failed secondary solves retain primary fallback.
 The two branches do not promise identical selected weights. The primary
 score, surrogate definitions, peer-ratio conventions and existing6201/6601
 schemas are preserved. New objective diagnostics use7001. See help and
-tests/CROSSEFF_OBJECTIVE.txt. Install the complete current 80-file ado/
+tests/CROSSEFF_OBJECTIVE.txt. Install the complete current 90-file ado/
 bundle, including all nine cross-efficiency helpers listed above.
 
 Optional optimal-face diagnostics (1.8.0)

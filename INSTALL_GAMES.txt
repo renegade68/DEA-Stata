@@ -1,0 +1,69 @@
+Cooperative/Nash matched-package installation and verification (09 Nov 2026)
+
+Copy the complete 90-file ado/ folder, using the inventory in INSTALL_COOPER.txt.
+This is local-folder installation; no net-install metadata is provided.
+The required game helpers include:
+    _dea_games.ado
+    _dea_games_load.ado
+    _dea_games_exact.ado
+    _dea_games_quality.ado
+Shared LP, exact and context modules must come from the same matched folder.
+Do not combine individual helpers from different releases.
+
+Use a fresh licensed Stata 16+ session. Save your data before clear all.
+Keep a complete prior package for rollback, and put this folder first on adopath:
+    adopath ++ "/absolute/path/to/DEA-Stata/ado"
+    which dea_cooperative
+    which dea_nash
+    findfile _dea_games_load.ado
+    findfile _dea_games_exact.ado
+    findfile _dea_games_quality.ado
+Partial-helper reload checks do not promise an arbitrary Mata struct ABI.
+Wrappers/help version1.3.0; derived readiness13001, score readiness12801.
+Readiness numbers are compatibility markers, not iteration limits.
+
+The self-contained example uses positive synthetic inputs and outputs. The
+second DMU has a positive exact inefficiency too small for rounded score
+subtraction to preserve. Both printed efficiencies can therefore look like one.
+GAMES_INSTALL_EXAMPLE_BEGIN
+clear
+set type double
+set obs 2
+gen double id=_n
+gen double x=cond(_n==1,1+2*2^-30,1+2^-30)
+gen double y=cond(_n==1,1+2^-30,1)
+dea_cooperative x=y,dmu(id) gen(c) matrix detail
+assert r(n_certified)==2 & r(rank_quality)==2
+assert c_rank==_n
+assert c_indiv==c_shapley & c_contrib==0
+dea_nash x=y,dmu(id) gen(n) matrix
+assert r(n_certified)==2 & r(allocation_quality)==2
+assert r(allocation_complete)==1
+assert r(n_zero_gain)==1
+assert n_gain>0 in 2
+assert n_bargain==n_disagree in 2
+matrix list r(result_quality)
+matrix list r(aggregate_diagnostics)
+GAMES_INSTALL_EXAMPLE_END
+
+Certified scores are optimal for the LP formed from the supplied binary64 data,
+not for unknown pre-rounded measurements. Bounded original-data certification
+currently covers n<=32 and m+s+2*(VRS)<=16. Outside it, available numerical
+scores remain explicitly unverified. Native diagnostics are not overwritten.
+Derived fields have separate arithmetic and export guards. A budget/precision
+failure withholds affected fields and warns, preserving valid independent ones.
+Per-context operation budgets are not a single whole-command work bound.
+Coalition enumeration, exports, score certification and each derived stage have
+separate bounds; see the help files. Large rational expressions can be costly.
+The log product is numerical. A represented zero product and an underflowed
+positive product have different reason codes. No tolerance relaxation is used.
+
+Portable regression commands (new external output directories):
+    python tests/run.py --suite cooperative_nash --output /new/output
+    python tests/run.py --suite games_quality --output /new/output
+The runner discovers Stata or accepts --stata /path/to/stata-mp; NumPy/SciPy are
+required. No Git history, research folder, download or R installation is needed.
+Optional R comparison:
+    python tests/test_cooperative_nash.py --stata /path/to/stata-mp --output /new/output --rscript /path/to/Rscript --only '^([0-9]+_base_|R_Benchmarking$)'
+This uses installed Benchmarking as a numerical cross-check, not exact authority.
+All fixtures are synthetic. See tests/GAMES_QUALITY.txt and tests/README.md.

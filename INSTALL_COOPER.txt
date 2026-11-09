@@ -1,6 +1,6 @@
 Cooper matched-package installation and verification (09 Nov 2026)
 
-Copy the entire ado/ directory, not only dea.ado. The matched package has 87
+Copy the entire ado/ directory, not only dea.ado. The matched package has 90
 runtime/help/do files. New Cooper files include the shared _dea_cooper_weights,
 context/data/exact worker and certificate/repair/face/result support modules.
 The package uses local-folder installation, not net install.
@@ -67,7 +67,7 @@ for the simplex path; numerical SciPy ranges do not authorize exact endpoints.
 The native path retains the independent numerical model and fault checks.
 An optional --rscript path enables additional numerical R comparisons.
 
-Matched runtime/help/do inventory (87 files):
+Matched runtime/help/do inventory (90 files):
     _dea_bootstrap_core.ado
     _dea_congestion_cooper.ado
     _dea_congestion_exact.ado
@@ -93,6 +93,9 @@ Matched runtime/help/do inventory (87 files):
     _dea_crosseff_raw.ado
     _dea_crosseff_simplex.ado
     _dea_games.ado
+    _dea_games_exact.ado
+    _dea_games_load.ado
+    _dea_games_quality.ado
     _dea_ipm.ado
     _dea_lpcheck.ado
     _dea_lpcontract.ado

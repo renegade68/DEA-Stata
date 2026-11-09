@@ -1,4 +1,4 @@
-*! version 1.2.0  02nov2026
+*! version 1.3.0  09nov2026
 *! 2026-11-01: use shared Form A/B parser; preserve if/in expressions.
 *! 2026-11-01: preflight output names; explicit replacevars; protect model data.
 *! dea_nash.ado — Nash Bargaining Game DEA
@@ -77,11 +77,12 @@ program define dea_nash, rclass
             exit 459
         }
     }
-    capture mata: assert(_dea_games_ready()==1)
-    if _rc {
-        quietly findfile _dea_games.ado
-        quietly run "`r(fn)'"
-    }
+    // Reload the ado loader itself: an earlier installation may be cached.
+    quietly findfile _dea_games_load.ado
+    local gamesloader "`r(fn)'"
+    capture program drop _dea_games_load
+    quietly run "`gamesloader'"
+    quietly _dea_games_load
     if "`dmu'"=="" {
         tempvar autoid
         quietly generate long `autoid'=_n if `touse'
@@ -96,8 +97,29 @@ program define dea_nash, rclass
     di as text "DEA historical bargaining-style allocation (input orientation; `rts')"
     di as text "Heuristic scenario and capped proportional rule; not a Nash-product optimizer."
     tempname gm
-    mata: _dea_games_compute("`inputs'","`outputs'","`dmu'","`touse'","`generate'", ///
+    tempname gmcontext
+    mata: `gmcontext'=_c57_context_save()
+    mata: _dea_rec_abort(); _rsm_audit_reset(0); _rsm_success_reset(1,0); _dea_link_reset(2,0)
+    capture noisily mata: _dea_games_compute("`inputs'","`outputs'","`dmu'","`touse'","`generate'", ///
         "nash","`rts'",`tolerance',"`matrix'"!="","`detail'"!="","`debug'"!="","`gm'")
+    local gmrc=_rc
+    mata: _c57_context_restore(`gmcontext')
+    mata: mata drop `gmcontext'
+    if `gmrc' exit `gmrc'
+    return scalar n_certified=`gm'_summary[1,1]
+    return scalar n_unverified=`gm'_summary[1,2]
+    return scalar n_unavailable=`gm'_summary[1,3]
+    return scalar n_native_failed=`gm'_summary[1,4]
+    return scalar n_native_boundary=`gm'_summary[1,5]
+    return scalar rank_quality=`gm'_summary[1,6]
+    return scalar rank_reason=`gm'_summary[1,7]
+    return scalar n_withheld_results=`gm'_summary[1,8]
+    return scalar n_withheld_aggregates=`gm'_summary[1,9]
+    return scalar n_unavailable_coalitions=`gm'_summary[1,10]
+    return scalar n_numerical_coalitions=`gm'_summary[1,11]
+    return scalar n_certified_coalitions=`gm'_summary[1,12]
+    return scalar n_withheld_coalitions=`gm'_summary[1,13]
+    return scalar allocation_quality=`gm'_summary[1,14]
     return local rts "`rts'"
     return local orientation "input"
     return local formulation "historical_capped_proportional"
@@ -117,13 +139,40 @@ program define dea_nash, rclass
     return scalar n_capped=`gm'_alloc[1,8]
     return scalar product_underflow=`gm'_alloc[1,9]
     return scalar allocation_complete=`gm'_alloc[1,10]
+    return scalar total_gain_quality=`gm'_aggregate[1,1]
+    return scalar total_gain_reason=`gm'_aggregate[1,2]
+    return scalar allocated_gain_quality=`gm'_aggregate[2,1]
+    return scalar allocated_gain_reason=`gm'_aggregate[2,2]
+    return scalar unallocated_gain_quality=`gm'_aggregate[3,1]
+    return scalar unallocated_gain_reason=`gm'_aggregate[3,2]
+    return scalar mean_gain_quality=`gm'_aggregate[4,1]
+    return scalar mean_gain_reason=`gm'_aggregate[4,2]
+    return scalar nash_product_quality=`gm'_aggregate[5,1]
+    return scalar nash_product_reason=`gm'_aggregate[5,2]
+    return scalar log_product_quality=`gm'_aggregate[6,1]
+    return scalar log_product_reason=`gm'_aggregate[6,2]
     if "`matrix'"!="" {
         matrix colnames `gm'_results=disagree coop bargain gain
         matrix colnames `gm'_lp=raw_score score accepted endpoint_adjusted
         return matrix results=`gm'_results
         return matrix lp_diagnostics=`gm'_lp
+        matrix colnames `gm'_quality=disagree coop bargain gain
+        matrix colnames `gm'_reason=disagree coop bargain gain
+        matrix colnames `gm'_aggregate=quality reason value relative_error export_ops max_limbs
+        matrix rownames `gm'_aggregate=total_gain allocated_gain unallocated_gain mean_gain nash_product log_product
+        return matrix score_diagnostics=`gm'_scorediag
+        return matrix native_lp_diagnostics=`gm'_native
+        return matrix result_quality=`gm'_quality
+        return matrix result_reason=`gm'_reason
+        return matrix aggregate_diagnostics=`gm'_aggregate
+        return matrix numerical_results=`gm'_numerical
+        return matrix numerical_aggregates=`gm'_numaggregate
+        if `gm'_summary[1,1]>0 {
+            return matrix lambda=`gm'_lambda
+            return matrix weights=`gm'_weights
+        }
     }
-    foreach suffix in meta alloc results lp {
+    foreach suffix in meta alloc results lp summary aggregate scorediag native quality reason numerical numaggregate lambda weights {
         capture matrix drop `gm'_`suffix'
     }
 end

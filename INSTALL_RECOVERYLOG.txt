@@ -160,7 +160,7 @@ Run tests/test_row_recovery.py with --stata and a new --output directory.
 See tests/ROW_RECOVERY.txt. Earlier version-specific paragraphs are historical.
 
 Stage-link integration (current simplex 2.0.25, contract 0.4.9, lp 2.0.5):
-Install all 74 files. Current readiness values are simplex 16, LP adapter 9, weak 6.
+Install all 90 current files. Current readiness values are simplex 16, LP adapter 9, weak 6.
 Use the fresh-session/save-and-clear-all procedure above. Earlier versioned
 paragraphs describe historical changes, not the currently matched package.
 Run tests/test_stage_linkage.py --stata /path/to/stata-mp --output /new/output.
@@ -168,4 +168,4 @@ See tests/STAGE_LINKAGE.txt and help dea's stage-link diagnostics. No new public
 tolerance option was added. The matrix is in-memory and main-analysis-only.
 
 Cooper simplex certification and shared native/simplex input guard are described
-in INSTALL_COOPER.txt. Copy all 74 matched runtime/help files together.
+in INSTALL_COOPER.txt. Copy all 90 current runtime/help files together.

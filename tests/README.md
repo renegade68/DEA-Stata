@@ -1663,14 +1663,12 @@ these tests does not mean that all native LP attempts succeed.
 
 
 `test_cooperative_nash.py` audits the additive fixed-frontier Shapley identity
-with independent coalition enumeration, and the historical capped allocation
-rule with independent arithmetic. It compares CRS/VRS scores with independently
-constructed SciPy/HiGHS multiplier duals and optionally R Benchmarking; captures
-actual native LPs and residuals (including explicit self-reference witnesses
-and a HiGHS IPM check without presolve for near-duplicate VRS cases); covers units, zero entries/columns, duplicates,
-near duplicates, sample syntax, replacement, reload, large identifiers, n>20,
-forced score/candidate failures, endpoint adjustments, gain caps and product
-underflow. This does not validate a general pooling game or Nash optimizer.
+and historical capped allocation. Original-data Fraction certificates now
+verify scores, exact ranks and derived formulas independently. Native LP captures
+retain their own numerical checks and fault history. See
+[GAMES_QUALITY.txt](GAMES_QUALITY.txt) for exact export/withholding contracts and
+`test_games_quality.py` for gain, scope, work-limit, fault and loader cases.
+The game tests need no Git history or private research inputs; R is optional.
 
 ```sh
 python tests/test_cooperative_nash.py --stata "$DEA_STATA" \
