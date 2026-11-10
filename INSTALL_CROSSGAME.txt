@@ -18,7 +18,8 @@ Place the complete folder first on adopath and confirm the selected command:
     findfile _dea_crossgame_load.ado
     findfile _dea_crossgame_recovery.ado
     findfile dea_crossgame.sthlp
-Core/recovery readiness is 11401; all three companions are version 1.0.0.
+Core/recovery readiness is 11401; core/recovery are version 1.0.0 and loader
+is 1.0.1. The shared raw helper is 1.1.2 with readiness8405.
 These are compatibility checks, not user options. No manual Mata preload or
 diagnostic output directory is required. Keep a complete older package to roll
 back; do not combine individual files from different releases.

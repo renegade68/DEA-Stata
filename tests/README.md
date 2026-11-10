@@ -1991,3 +1991,21 @@ No Git history, R or private research folder is needed. See
 Native failure counts can vary across Stata versions; dedicated fault injection
 checks recovery and warning semantics independently. Exact certificates apply
 to alpha=1 represented data within the documented dimension/work/export scope.
+
+### Point-export failure reasons
+
+`crosseff_point` checks locally generated rational packets, nearest-even ties,
+subnormal/overflow boundaries, free-variable subtraction, late-coordinate
+withholding, and work/limb/shift failure priority. Invalid and deliberately
+extended inputs exercise helper boundaries rather than feasible DEA models.
+Test-only limit injection is confined to its Stata process; the complete raw
+helper is reloaded and a public command repeated after defaults are restored.
+The standard-library test needs licensed Stata and no R, Git history or private
+data. Logs and generated packets remain in the chosen output folder.
+
+```sh
+python3 -B tests/run.py --suite crosseff_point --suite crosseff_raw
+```
+
+This supplements the designated full regression set. It does not test every
+command option or prove mathematical infeasibility of rejected exports.

@@ -1,4 +1,4 @@
-*! version 1.1.1 08nov2026
+*! version 1.1.2 10nov2026
 *! Failure-only certified original-unit weights and bounded exact peer arithmetic.
 version 16.0
 capture mata: mata drop _c84_work()
@@ -211,7 +211,7 @@ real rowvector _c84_point(real rowvector ve,real scalar free,struct _C58_Cert sc
   if(free & j==d) N=_c58b_add(N,_c58b_neg(_c58b_norm(fit.numerator[d+1,.])),W)
   N=_c58b_shift(N,max((0,ve[j])),W);D=_c58b_shift(D,max((0,-ve[j])),W)
   z=_c58d_double(N,D);diag[3]=diag[3]+W.ops;diag[4]=max((diag[4],W.maxlimbs))
-  if(W.error | z[2] | (N[1]!=0 & z[1]==0)) {diag[2]=(W.error ? 10+W.error : z[2] ? z[2] : 4);return(J(1,d,.));}
+  if(W.error | z[2] | (N[1]!=0 & z[1]==0)) {if(W.error) diag[2]=10+W.error;else if(z[2]) diag[2]=z[2];else diag[2]=4;return(J(1,d,.));}
   x[j]=z[1]
  }
  diag[1]=1;return(x)
@@ -238,7 +238,7 @@ real rowvector _c84_guard(struct _C84_Model scalar A,real rowvector x,
  gap=_c84_value(r);if(_c84_gt(r,qt,W)) ok=0
  return((ok & bounds & !W.error,eq,iq,gap,bounds,W.error,W.ops,W.maxlimbs))
 }
-real scalar _c84_ready() return(8404)
+real scalar _c84_ready() return(8405)
 struct _C84_Q scalar _c84_mul(struct _C84_Q scalar a,struct _C84_Q scalar b,struct _C58_Work scalar W)
 {
  struct _C84_Q scalar q

@@ -31,7 +31,7 @@ def main():
     for name in ['PLUS','PERSONAL','SITE','OLDPLACE']:
         (out/name).mkdir();code+=f'sysdir set {name} "{out/name}"\n'
     code+=f'adopath ++ "{REPO/"ado"}"\ninput id x y\n1 1 1\n2 2 1\nend\nquietly dea_crosseff x=y,dmu(id) eng(simplex)\n'
-    code+='mata: assert(_c58_cert_ready()==6204 & _c70_exact_ready()==7003 & _c84_ready()==8404 & _c57_simplex_ready()==8402)\n'+WRITER
+    code+='mata: assert(_c58_cert_ready()==6204 & _c70_exact_ready()==7003 & _c84_ready()==8405 & _c57_simplex_ready()==8402)\n'+WRITER
     code+='''mata:
 void decoder_check(real colvector values,real scalar mode,string scalar file) {
  struct _C58_Work scalar W

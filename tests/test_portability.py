@@ -165,7 +165,7 @@ class Portability(unittest.TestCase):
 
     def test_registry_marks_historical_inputs(self):
         registry = runner.suites()
-        self.assertEqual(len(registry), 92)
+        self.assertEqual(len(registry), 93)
         self.assertFalse(registry["twostage_quality"]["required"])
         self.assertFalse(registry["games_quality"]["required"])
         self.assertFalse(registry["fuzzy_quality"]["required"])
@@ -173,6 +173,8 @@ class Portability(unittest.TestCase):
         self.assertIn("--rscript", registry["cooper_table"]["flags"])
         for name in ("crosseff_costunits", "crosseff_costunits_flow", "crosseff_costunits_link", "crossgame_recovery"):
             self.assertEqual(registry[name]["required"], set())
+        self.assertEqual(registry['crosseff_point']['required'], set())
+        self.assertEqual(registry['crosseff_point']['dependencies'], set())
         self.assertIn('crosseff_decoder', registry)
         self.assertIn('crosseff_dyadic', registry)
         self.assertFalse(registry['crosseff_dyadic']['required'])

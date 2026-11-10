@@ -198,6 +198,7 @@
   "tests/test_crosseff_models.py",
   "tests/test_crosseff_objective.py",
   "tests/test_crosseff_optima.py",
+  "tests/test_crosseff_point.py",
   "tests/test_crosseff_preflight.py",
   "tests/test_crosseff_raw.py",
   "tests/test_crosseff_recovery.py",

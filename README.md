@@ -6,11 +6,16 @@ Python dependencies and Stata discovery. Personal settings and generated test
 results are excluded from the public inventory. [Publication checks](tests/PUBLICATION.txt)
 cover paths, credentials, staged files and commit email metadata.
 
-`dea_crosseff` 1.10.4 provides failure-only certified recovery in original data
+`dea_crosseff` 1.10.5 provides failure-only certified recovery in original data
 units for explicit simplex. Accepted evaluator weights and self scores remain
 unchanged. Recovered rows use directly exported raw weights and bounded exact
 peer arithmetic, including input VRS Lim-Zhu. Unverified primary solutions stay
 unavailable; a failed secondary retains its certified primary weights.
+Version 1.10.5 corrects internal point-export failure reasons while preserving
+point acceptance, resource limits and public diagnostic schemas. Upgrade the
+complete matched package. The portable synthetic regression is
+`python3 -B tests/run.py --suite crosseff_point --suite crosseff_raw`.
+
 Version 1.10.4 adds exact cancellation and common-factor division for failed
 raw secondary certificates. It discovers a positive integer objective factor
 in Mata and keeps the original objective units with the certificate. The extra
@@ -237,7 +242,7 @@ iteration limit is distinguished from convergence. Aggressive/benevolent
 strategies retain the documented weighted-output surrogates. Their scores are
 not guaranteed to bracket Nash scores. See help for averaging and fallback rules.
 
-`dea_crosseff` 1.10.4 keeps native IPM as the default. Explicit
+`dea_crosseff` 1.10.5 keeps native IPM as the default. Explicit
 `engine(simplex)` obtains the numerical primary formulation, then uses
 original quantities for bounded exact primary/secondary certificates. The
 secondary face uses positive exact primary dual constraints; a rounded

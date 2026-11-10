@@ -352,3 +352,6 @@
 !/tests/cooper_certified/table.py
 !/tests/fixtures/cooper_table.json
 !/tests/test_cooper_table.py
+
+# Portable raw-point diagnostic boundary regression.
+!/tests/test_crosseff_point.py

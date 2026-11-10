@@ -1,4 +1,4 @@
-Cross-efficiency 1.10.4 matched-package installation and verification
+Cross-efficiency 1.10.5 matched-package installation and verification
 
 Install all 92 files in ado/ together. Ten cross-efficiency helpers are required:
 _dea_crosseff_context.ado, _dea_crosseff_simplex.ado, _dea_crosseff_raw.ado,
@@ -7,7 +7,7 @@ _dea_crosseff_objective.ado, _dea_crosseff_exactobjective.ado,
 _dea_crosseff_costunits.ado,
 _dea_crosseff_optima.ado, and _dea_crosseff_cerange.ado.
 Context, objective and CE-range helpers are 1.0.0; certificate is 1.0.3;
-exactobjective is 1.0.2; costunits is 1.0.0; raw recovery is 1.1.1; simplex is 1.3.1;
+exactobjective is 1.0.2; costunits is 1.0.0; raw recovery is 1.1.2; simplex is 1.3.1;
 diagnostics and optima are 1.1.0.
 The complete inventory is in INSTALL_COOPER.txt. This package uses local-folder
 installation and does not provide net-install metadata.
@@ -28,7 +28,7 @@ Put the complete directory first on adopath:
     findfile _dea_crosseff_cerange.ado
     findfile dea_crosseff.sthlp
 Internal compatibility readiness: context 57; base certificate 6204;
-diagnostics/objective 7001; exactobjective 7003; costunits 10702; simplex 8402; raw recovery 8404;
+diagnostics/objective 7001; exactobjective 7003; costunits 10702; simplex 8402; raw recovery 8405;
 optima core 7301;
 CE core 7601; optima and CE adapters 7701. These are ABI checks, not
 version labels or iteration settings. Public diagnostic schemas remain
@@ -252,3 +252,16 @@ Portable component and linkage checks:
     python3 -B tests/run.py --suite crosseff_costunits --suite crosseff_costunits_flow --suite crosseff_costunits_link
 These three suites supplement the existing 36-suite set. Complete validation
 of a changed package must include both the existing set and these new suites.
+
+Point-export failure diagnostics (1.10.5)
+Internal point-export reasons give an existing integer-work/limb/shift refusal
+priority over a subsequent conversion failure. Rejected points remain missing;
+score acceptance, resource limits and all public diagnostic schemas are unchanged.
+Raw helper readiness is8405. Both cross-efficiency and crossgame loaders require
+the matched helper. Restart Stata or clear all when upgrading the full directory.
+
+Portable synthetic regression:
+    python3 -B tests/run.py --suite crosseff_point --suite crosseff_raw
+The point suite generates integer packets locally and includes explicitly
+test-only work-limit injection. Limits are restored before a repeated command.
+Its rejected packets are not proofs of mathematical LP infeasibility.
